@@ -2,6 +2,8 @@
 
 启动本机 `node_exporter`，抓取 `/metrics`，再把指标推到 Prometheus Pushgateway。
 
+面向最终用户的安装、卸载和排障说明见 [用户手册](/Users/libiao/Documents/push_node/docs/user-manual.md)。
+
 ## 运行方式
 
 本地调试时，程序默认读取当前目录下的 `./config.yml`。

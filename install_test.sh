@@ -92,6 +92,16 @@ assert_fail \
   bash -lc 'source "'"${INSTALL_SH}"'"; fail() { printf "%s\n" "$1"; return 1; }; systemctl() { if [[ "$1" == "is-active" ]]; then return 1; elif [[ "$1" == "status" ]]; then printf "status output"; fi; }; journalctl() { printf "journal output"; }; curl() { return 0; }; verify_service_health "node_exporter" "http://127.0.0.1:9100/metrics"'
 
 assert_eq \
+  "$(bash -lc 'source "'"${INSTALL_SH}"'"; attempts=0; curls=0; systemctl() { if [[ "$1" == "is-active" ]]; then attempts=$((attempts + 1)); [[ ${attempts} -ge 3 ]]; return; elif [[ "$1" == "status" ]]; then printf "status output"; fi; }; journalctl() { printf "journal output"; }; curl() { curls=$((curls + 1)); return 0; }; sleep() { :; }; verify_service_health "node_exporter" "http://127.0.0.1:9100/metrics"; printf "%s|%s" "${attempts}" "${curls}"' | tail -n 1)" \
+  "3|1" \
+  "service health should retry until active"
+
+assert_eq \
+  "$(bash -lc 'source "'"${INSTALL_SH}"'"; attempts=0; curls=0; systemctl() { if [[ "$1" == "is-active" ]]; then attempts=$((attempts + 1)); return 0; elif [[ "$1" == "status" ]]; then printf "status output"; fi; }; journalctl() { printf "journal output"; }; curl() { curls=$((curls + 1)); [[ ${curls} -ge 2 ]]; return; }; sleep() { :; }; verify_service_health "node_exporter" "http://127.0.0.1:9100/metrics"; printf "%s|%s" "${attempts}" "${curls}"' | tail -n 1)" \
+  "1|2" \
+  "metrics health should retry until reachable"
+
+assert_eq \
   "$(bash -lc 'source "'"${INSTALL_SH}"'"; command() { [[ "$1" == "-v" && "$2" == "restorecon" ]] && return 0; builtin command "$@"; }; restorecon() { printf "%s|" "$@"; }; restore_selinux_context /tmp/a /tmp/b' | grep -o '\-Rv|/tmp/a|/tmp/b|')" \
   "-Rv|/tmp/a|/tmp/b|" \
   "restorecon runs when available"

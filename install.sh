@@ -8,6 +8,8 @@ NODE_EXPORTER_BIN="/usr/local/bin/node_exporter"
 NODE_EXPORTER_SERVICE_NAME="node_exporter"
 NODE_EXPORTER_SERVICE_PATH="/etc/systemd/system/node_exporter.service"
 NODE_EXPORTER_METRICS_URL="http://127.0.0.1:9100/metrics"
+HEALTH_CHECK_RETRIES=10
+HEALTH_CHECK_INTERVAL=1
 NODE_PUSH_EXPORTER_BIN="/usr/local/bin/node-push-exporter"
 NODE_PUSH_EXPORTER_SERVICE_NAME="node-push-exporter"
 NODE_PUSH_EXPORTER_CONFIG_DIR="/etc/node-push-exporter"
@@ -122,18 +124,41 @@ collect_service_diagnostics() {
     "${journal_output}"
 }
 
+wait_until_command_succeeds() {
+  local retries="$1"
+  local interval="$2"
+  shift 2
+
+  local attempt
+  for ((attempt = 1; attempt <= retries; attempt++)); do
+    if "$@"; then
+      return 0
+    fi
+    if (( attempt < retries )); then
+      sleep "${interval}"
+    fi
+  done
+
+  return 1
+}
+
+check_metrics_endpoint() {
+  local health_url="$1"
+  curl -fsS "${health_url}" >/dev/null
+}
+
 verify_service_health() {
   local service_name="$1"
   local health_url="${2:-}"
   local diagnostics
 
-  if ! systemctl is-active --quiet "${service_name}"; then
+  if ! wait_until_command_succeeds "${HEALTH_CHECK_RETRIES}" "${HEALTH_CHECK_INTERVAL}" systemctl is-active --quiet "${service_name}"; then
     diagnostics="$(collect_service_diagnostics "${service_name}")"
     fail "$(printf '%s\n\n%s' "${service_name} 启动失败" "${diagnostics}")"
   fi
 
   if [[ -n "${health_url}" ]]; then
-    if ! curl -fsS "${health_url}" >/dev/null; then
+    if ! wait_until_command_succeeds "${HEALTH_CHECK_RETRIES}" "${HEALTH_CHECK_INTERVAL}" check_metrics_endpoint "${health_url}"; then
       diagnostics="$(collect_service_diagnostics "${service_name}")"
       fail "$(printf '%s\n%s\n\n%s' "${service_name} 健康检查失败" "探测地址: ${health_url}" "${diagnostics}")"
     fi
