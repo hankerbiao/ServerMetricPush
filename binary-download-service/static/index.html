@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binary Download Service</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 30px; color: #333; }
+        .program-section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .program-title { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; color: #2563eb; }
+        .upload-area { border: 2px dashed #ddd; padding: 20px; text-align: center; border-radius: 4px; margin-bottom: 15px; }
+        .upload-area:hover { border-color: #2563eb; }
+        .file-input { display: none; }
+        .upload-btn { background: #2563eb; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        .upload-btn:hover { background: #1d4ed8; }
+        .file-list { width: 100%; border-collapse: collapse; }
+        .file-list th, .file-list td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .file-list th { background: #f9fafb; font-weight: 600; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; text-decoration: none; display: inline-block; font-size: 0.9em; }
+        .btn-download { background: #10b981; color: white; }
+        .btn-download:hover { background: #059669; }
+        .btn-delete { background: #ef4444; color: white; }
+        .btn-delete:hover { background: #dc2626; }
+        .btn-copy { background: #6b7280; color: white; }
+        .btn-copy:hover { background: #4b5563; }
+        .empty { text-align: center; color: #9ca3af; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Binary Download Service</h1>
+
+        <div class="program-section">
+            <div class="program-title">node_exporter</div>
+            <div class="upload-area">
+                <input type="file" id="file-node_exporter" class="file-input" onchange="uploadFile(this, 'node_exporter')">
+                <button class="upload-btn" onclick="document.getElementById('file-node_exporter').click()">上传文件</button>
+                <p style="margin-top: 10px; color: #666; font-size: 0.9em;">文件名格式: node_exporter-{version}-{os}-{arch}.tar.gz</p>
+            </div>
+            <table class="file-list">
+                <thead>
+                    <tr>
+                        <th>版本</th>
+                        <th>架构</th>
+                        <th>大小</th>
+                        <th>上传时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="list-node_exporter"></tbody>
+            </table>
+        </div>
+
+        <div class="program-section">
+            <div class="program-title">node-push-exporter</div>
+            <div class="upload-area">
+                <input type="file" id="file-node-push-exporter" class="file-input" onchange="uploadFile(this, 'node-push-exporter')">
+                <button class="upload-btn" onclick="document.getElementById('file-node-push-exporter').click()">上传文件</button>
+                <p style="margin-top: 10px; color: #666; font-size: 0.9em;">文件名格式: node-push-exporter-{version}-{os}-{arch}</p>
+            </div>
+            <table class="file-list">
+                <thead>
+                    <tr>
+                        <th>版本</th>
+                        <th>架构</th>
+                        <th>大小</th>
+                        <th>上传时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="list-node-push-exporter"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        async function loadFiles() {
+            const resp = await fetch(`${API_BASE}/api/files`);
+            const data = await resp.json();
+
+            const nodeExporterFiles = data.files.filter(f => f.program === 'node_exporter');
+            const nodePushExporterFiles = data.files.filter(f => f.program === 'node-push-exporter');
+
+            renderFileList('list-node_exporter', nodeExporterFiles);
+            renderFileList('list-node-push-exporter', nodePushExporterFiles);
+        }
+
+        function renderFileList(elementId, files) {
+            const tbody = document.getElementById(elementId);
+            if (files.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无文件</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = files.map(f => `
+                <tr>
+                    <td>${f.version}</td>
+                    <td>${f.os}-${f.arch}</td>
+                    <td>${formatSize(f.file_size)}</td>
+                    <td>${new Date(f.uploaded_at).toLocaleString('zh-CN')}</td>
+                    <td>
+                        <button class="btn btn-copy" onclick="copyLink('${f.filename}')">复制链接</button>
+                        <a href="/download/${f.filename}" class="btn btn-download" download>下载</a>
+                        <button class="btn btn-delete" onclick="deleteFile(${f.id}, '${f.filename}')">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+
+        function copyLink(filename) {
+            const url = `${window.location.origin}/download/${filename}`;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('下载链接已复制: ' + url);
+            });
+        }
+
+        async function uploadFile(input, program) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (resp.ok) {
+                    alert('上传成功');
+                    loadFiles();
+                } else {
+                    const err = await resp.json();
+                    alert('上传失败: ' + err.detail);
+                }
+            } catch (e) {
+                alert('上传失败: ' + e.message);
+            }
+
+            input.value = '';
+        }
+
+        async function deleteFile(id, filename) {
+            if (!confirm(`确定要删除 ${filename} 吗?`)) return;
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/files/${id}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    alert('删除成功');
+                    loadFiles();
+                } else {
+                    const err = await resp.json();
+                    alert('删除失败: ' + err.detail);
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        loadFiles();
+    </script>
+</body>
+</html>

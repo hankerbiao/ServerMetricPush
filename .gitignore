@@ -1,0 +1,28 @@
+# Go build outputs
+/node-push-exporter
+*.exe
+*.test
+*.out
+*.coverprofile
+coverage.out
+
+# Local third-party binaries
+/node_exporter
+
+# Caches
+/.gocache/
+/.ruff_cache/
+
+# Logs
+*.log
+
+# Release artifacts
+/releases/
+
+# Python service runtime files
+binary-download-service/__pycache__/
+binary-download-service/*.db
+binary-download-service/uploads/
+
+# macOS
+.DS_Store
