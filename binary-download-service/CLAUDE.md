@@ -32,12 +32,21 @@ The service follows a simple layered architecture:
 
 ### API Endpoints
 
+**File Management:**
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/files` | List all files, optionally filtered by `program` query param |
 | POST | `/api/upload` | Upload a binary file (multipart form) |
 | DELETE | `/api/files/{file_id}` | Delete a file by ID |
 | GET | `/download/{filename}` | Download a file |
+
+**Agent Management:**
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/agents/register` | Register a node-push-exporter agent |
+| POST | `/api/agents/heartbeat` | Agent heartbeat update |
+| GET | `/api/agents` | List all registered agents |
+| GET | `/api/agents/{agent_id}` | Get agent details with recent events |
 
 ### Filename Parsing
 
@@ -62,3 +71,18 @@ Supported architectures: `amd64`, `arm64`
 - Upload replaces existing files with the same filename (updates DB record)
 - CORS is enabled for all origins (development-friendly)
 - The web UI serves as a SPA at the root path, with API routes under `/api/`
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+| Document | Description |
+|----------|-------------|
+| [docs/INSTALL.md](docs/INSTALL.md) | Installation and deployment guide |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | User guide for web interface |
+| [docs/API.md](docs/API.md) | Complete API reference |
+
+Quick links:
+- Web UI: http://localhost:8080
+- Agent Monitor: http://localhost:8080/agents
+- Swagger UI: http://localhost:8080/docs
