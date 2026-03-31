@@ -7,7 +7,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from database import FileRecord, SessionLocal
-from main import app, parse_filename
+from main import app
+from services.file_service import parse_filename
 
 
 class UploadReplaceTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class UploadReplaceTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_upload_same_filename_replaces_existing_record(self):
-        with patch("main.UPLOAD_DIR", self.temp_dir.name):
+        with patch("services.file_service.UPLOAD_DIR", self.temp_dir.name):
             first = self.client.post(
                 "/api/upload",
                 files={"file": (self.filename, b"first-version", "application/octet-stream")},
@@ -77,7 +78,7 @@ class UploadReplaceTests(unittest.TestCase):
     def test_download_returns_uploaded_file_content(self):
         content = b"downloadable-binary"
 
-        with patch("main.UPLOAD_DIR", self.temp_dir.name):
+        with patch("services.file_service.UPLOAD_DIR", self.temp_dir.name):
             upload = self.client.post(
                 "/api/upload",
                 files={"file": (self.filename, content, "application/octet-stream")},
