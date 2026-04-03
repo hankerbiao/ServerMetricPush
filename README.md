@@ -3,6 +3,7 @@
 启动本机 `node_exporter`，抓取 `/metrics`，再把指标推到 Prometheus Pushgateway。
 
 面向最终用户的安装、卸载和排障说明见 [用户手册](/Users/libiao/Documents/push_node/docs/user-manual.md)。
+GPU 采集行为和指标名称见 [GPU 指标采集说明](/Users/libiao/Documents/push_node/docs/gpu-metrics.md)。
 
 ## 运行方式
 

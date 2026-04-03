@@ -1,11 +1,27 @@
 package main
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"node-push-exporter/src/pusher"
 )
+
+type stubGPUMetricsCollector struct {
+	metrics string
+	err     error
+}
+
+func (s stubGPUMetricsCollector) Collect() (string, error) {
+	return s.metrics, s.err
+}
 
 func TestDefaultConfigPath(t *testing.T) {
 	if defaultConfigPath != "./config.yml" {
@@ -95,5 +111,93 @@ func TestEffectivePushInstance_FallsBackWhenEmpty(t *testing.T) {
 	got := effectivePushInstance("")
 	if got == "" {
 		t.Fatal("effectivePushInstance() = empty, want detected ip or hostname")
+	}
+}
+
+func TestFetchAndPush_AppendsGPUMetricsWhenCollectionSucceeds(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		pushedBody  string
+		requestSeen bool
+	)
+
+	pushgateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll(r.Body) error = %v", err)
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		requestSeen = true
+		pushedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer pushgateway.Close()
+
+	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "node_cpu_seconds_total 123\n")
+	}))
+	defer metricsServer.Close()
+
+	p := pusher.NewPusher(pushgateway.URL)
+	err := fetchAndPush(metricsServer.URL, p, nil, stubGPUMetricsCollector{
+		metrics: "gpu_up 1\n",
+	})
+	if err != nil {
+		t.Fatalf("fetchAndPush() error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !requestSeen {
+		t.Fatal("Pushgateway did not receive any request")
+	}
+	if pushedBody != "node_cpu_seconds_total 123\ngpu_up 1\n" {
+		t.Fatalf("pushed body = %q, want merged node and gpu metrics", pushedBody)
+	}
+}
+
+func TestFetchAndPush_PushesNodeMetricsWhenGPUCollectionFails(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		pushedBody  string
+		requestSeen bool
+	)
+
+	pushgateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll(r.Body) error = %v", err)
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		requestSeen = true
+		pushedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer pushgateway.Close()
+
+	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "node_load1 0.42\n")
+	}))
+	defer metricsServer.Close()
+
+	p := pusher.NewPusher(pushgateway.URL)
+	err := fetchAndPush(metricsServer.URL, p, nil, stubGPUMetricsCollector{
+		err: fmt.Errorf("gpu unavailable"),
+	})
+	if err != nil {
+		t.Fatalf("fetchAndPush() error = %v, want nil when gpu collection fails", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !requestSeen {
+		t.Fatal("Pushgateway did not receive any request")
+	}
+	if pushedBody != "node_load1 0.42\n" {
+		t.Fatalf("pushed body = %q, want only node metrics when gpu collection fails", pushedBody)
 	}
 }

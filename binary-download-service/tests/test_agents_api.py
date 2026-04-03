@@ -10,15 +10,27 @@ from main import app
 
 class AgentsAPITests(unittest.TestCase):
     def setUp(self):
-        self.agent_id = f"agent-{uuid.uuid4().hex}"
+        self.test_id = uuid.uuid4().hex
+        self.agent_id = f"agent-{self.test_id}"
+        self.agent_ids = {self.agent_id}
+        self.hostname = f"host-{self.test_id[:8]}"
+        suffix = int(self.test_id[:2], 16)
+        self.ip = f"10.0.{suffix // 16}.{(suffix % 16) + 1}"
         self.client = TestClient(app)
 
     def tearDown(self):
         self.client.close()
         db = SessionLocal()
         try:
-            db.query(AgentEventRecord).filter(AgentEventRecord.agent_id == self.agent_id).delete()
-            db.query(AgentRecord).filter(AgentRecord.agent_id == self.agent_id).delete()
+            db.query(AgentEventRecord).filter(AgentEventRecord.agent_id.in_(self.agent_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(AgentRecord).filter(AgentRecord.agent_id.in_(self.agent_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(AgentRecord).filter(AgentRecord.hostname == self.hostname, AgentRecord.ip == self.ip).delete(
+                synchronize_session=False
+            )
             db.commit()
         finally:
             db.close()
@@ -36,7 +48,7 @@ class AgentsAPITests(unittest.TestCase):
         db = SessionLocal()
         try:
             row = db.query(AgentRecord).filter(AgentRecord.agent_id == self.agent_id).one()
-            self.assertEqual(row.hostname, "host-01")
+            self.assertEqual(row.hostname, self.hostname)
             self.assertEqual(row.status, "online")
             self.assertEqual(row.version, "1.2.3")
         finally:
@@ -64,6 +76,53 @@ class AgentsAPITests(unittest.TestCase):
             rows = db.query(AgentRecord).filter(AgentRecord.agent_id == self.agent_id).all()
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].hostname, "host-02")
+            self.assertEqual(rows[0].version, "1.2.4")
+        finally:
+            db.close()
+
+    def test_register_reuses_existing_node_when_agent_id_changes(self):
+        first = self.client.post(
+            "/api/agents/register",
+            json=self.register_payload(),
+        )
+        self.assertEqual(first.status_code, 200)
+
+        db = SessionLocal()
+        try:
+            record = db.query(AgentRecord).filter(AgentRecord.agent_id == self.agent_id).one()
+            record.last_seen_at = None
+            record.status = "offline"
+            db.commit()
+        finally:
+            db.close()
+
+        replacement_agent_id = f"agent-{uuid.uuid4().hex}"
+        self.agent_ids.add(replacement_agent_id)
+        replacement_payload = self.register_payload(agent_id=replacement_agent_id)
+        replacement_payload["version"] = "1.2.4"
+
+        second = self.client.post(
+            "/api/agents/register",
+            json=replacement_payload,
+        )
+
+        listing = self.client.get("/api/agents")
+
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(len(listing.json()["agents"]), 1)
+        self.assertEqual(listing.json()["agents"][0]["agent_id"], replacement_agent_id)
+        self.assertEqual(listing.json()["agents"][0]["status"], "online")
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(AgentRecord)
+                .filter(AgentRecord.hostname == self.hostname, AgentRecord.ip == self.ip)
+                .all()
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].agent_id, replacement_agent_id)
             self.assertEqual(rows[0].version, "1.2.4")
         finally:
             db.close()
@@ -100,14 +159,14 @@ class AgentsAPITests(unittest.TestCase):
         self.assertFalse(agent["node_exporter_up"])
         self.assertTrue(agent["online"])
 
-    def register_payload(self):
+    def register_payload(self, agent_id=None):
         return {
-            "agent_id": self.agent_id,
-            "hostname": "host-01",
+            "agent_id": agent_id or self.agent_id,
+            "hostname": self.hostname,
             "version": "1.2.3",
             "os": "linux",
             "arch": "amd64",
-            "ip": "10.0.0.1",
+            "ip": self.ip,
             "pushgateway_url": "http://pushgateway:9091",
             "push_interval_seconds": 30,
             "node_exporter_port": 9100,

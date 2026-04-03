@@ -22,6 +22,7 @@ import (
 
 	"node-push-exporter/src/config"
 	"node-push-exporter/src/controlplane"
+	"node-push-exporter/src/gpu"
 	"node-push-exporter/src/pusher"
 )
 
@@ -34,6 +35,10 @@ const defaultConfigPath = "./config.yml"
 
 type nodeExporterProcess struct {
 	cmd *exec.Cmd
+}
+
+type gpuMetricsCollector interface {
+	Collect() (string, error)
 }
 
 type controlPlaneRuntimeState struct {
@@ -142,6 +147,7 @@ func main() {
 		pusher.WithInstance(pushInstance),
 		pusher.WithTimeout(time.Duration(cfg.Pushgateway.Timeout)*time.Second),
 	)
+	gpuCollector := gpu.NewManager(5 * time.Second)
 
 	ticker := time.NewTicker(time.Duration(cfg.Pushgateway.Interval) * time.Second)
 	defer ticker.Stop()
@@ -174,14 +180,14 @@ func main() {
 
 	time.Sleep(2 * time.Second)
 
-	if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState); err != nil {
+	if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector); err != nil {
 		log.Printf("首次推送失败: %v", err)
 	}
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState); err != nil {
+			if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector); err != nil {
 				log.Printf("推送失败: %v", err)
 			}
 		case <-heartbeatCh:
@@ -344,13 +350,22 @@ func (p *nodeExporterProcess) Stop() {
 		p.cmd.Wait()
 	}
 }
-func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *controlPlaneRuntimeState) error {
+func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *controlPlaneRuntimeState, gpuCollector gpuMetricsCollector) error {
 	metrics, err := fetchMetrics(metricsURL)
 	if err != nil {
 		if runtimeState != nil {
 			runtimeState.RecordFetchFailure(err)
 		}
 		return fmt.Errorf("获取指标失败: %w", err)
+	}
+
+	if gpuCollector != nil {
+		gpuMetrics, err := gpuCollector.Collect()
+		if err != nil {
+			log.Printf("GPU指标采集失败，继续推送node_exporter指标: %v", err)
+		} else {
+			metrics = mergeMetrics(metrics, gpuMetrics)
+		}
 	}
 
 	// 推送到 Pushgateway
@@ -367,6 +382,24 @@ func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *contro
 	log.Printf("指标推送成功，来源: %s", metricsURL)
 	return nil
 }
+
+func mergeMetrics(nodeMetrics, extraMetrics string) string {
+	nodeMetrics = strings.TrimRight(nodeMetrics, "\n")
+	extraMetrics = strings.TrimSpace(extraMetrics)
+
+	switch {
+	case nodeMetrics == "":
+		if extraMetrics == "" {
+			return ""
+		}
+		return extraMetrics + "\n"
+	case extraMetrics == "":
+		return nodeMetrics + "\n"
+	default:
+		return nodeMetrics + "\n" + extraMetrics + "\n"
+	}
+}
+
 func fetchMetrics(url string) (string, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,

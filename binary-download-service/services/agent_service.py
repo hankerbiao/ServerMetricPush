@@ -42,6 +42,30 @@ def add_agent_event(db: Session, agent_id: str, event_type: str, message: str) -
     )
 
 
+def find_existing_agent_record(db: Session, payload: AgentRegisterRequest) -> Optional[AgentRecord]:
+    record = db.query(AgentRecord).filter(AgentRecord.agent_id == payload.agent_id).first()
+    if record is not None:
+        return record
+
+    if payload.ip:
+        return (
+            db.query(AgentRecord)
+            .filter(
+                AgentRecord.hostname == payload.hostname,
+                AgentRecord.ip == payload.ip,
+            )
+            .order_by(AgentRecord.updated_at.desc(), AgentRecord.id.desc())
+            .first()
+        )
+
+    return (
+        db.query(AgentRecord)
+        .filter(AgentRecord.hostname == payload.hostname)
+        .order_by(AgentRecord.updated_at.desc(), AgentRecord.id.desc())
+        .first()
+    )
+
+
 def serialize_agent(agent: AgentRecord) -> AgentResponse:
     now = utcnow()
     last_seen = agent.last_seen_at
@@ -84,11 +108,18 @@ def serialize_agent(agent: AgentRecord) -> AgentResponse:
 
 
 def register_agent(db: Session, payload: AgentRegisterRequest) -> AgentRegisterResponse:
-    record = db.query(AgentRecord).filter(AgentRecord.agent_id == payload.agent_id).first()
+    record = find_existing_agent_record(db, payload)
     is_new = record is None
     if record is None:
         record = AgentRecord(agent_id=payload.agent_id)
         db.add(record)
+    elif record.agent_id != payload.agent_id:
+        previous_agent_id = record.agent_id
+        db.query(AgentEventRecord).filter(AgentEventRecord.agent_id == previous_agent_id).update(
+            {AgentEventRecord.agent_id: payload.agent_id},
+            synchronize_session=False,
+        )
+        record.agent_id = payload.agent_id
 
     record.hostname = payload.hostname
     record.version = payload.version
