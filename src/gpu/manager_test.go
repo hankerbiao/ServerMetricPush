@@ -3,6 +3,8 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -62,10 +64,10 @@ func TestManager_Collect_ExportsNvidiaMetrics(t *testing.T) {
 				"nvidia-smi": true,
 			},
 			outputs: map[string]stubCommandResult{
-				"nvidia-smi -L": {
+				"/usr/bin/nvidia-smi -L": {
 					output: "GPU 0: NVIDIA A800 (UUID: GPU-123)\n",
 				},
-				"nvidia-smi --query-gpu=index,name,uuid,temperature.gpu,utilization.gpu,memory.total,memory.used,power.draw --format=csv,noheader,nounits": {
+				"/usr/bin/nvidia-smi --query-gpu=index,name,uuid,temperature.gpu,utilization.gpu,memory.total,memory.used,power.draw --format=csv,noheader,nounits": {
 					output: "0, NVIDIA A800, GPU-123, 52, 78, 81920, 40960, 250.5\n",
 				},
 			},
@@ -85,6 +87,34 @@ func TestManager_Collect_ExportsNvidiaMetrics(t *testing.T) {
 	assertContainsMetric(t, metrics, `gpu_info{gpu="0",name="NVIDIA A800",uuid="GPU-123",vendor="nvidia"} 1`)
 	assertContainsMetric(t, metrics, `gpu_temperature_celsius{gpu="0",name="NVIDIA A800",uuid="GPU-123",vendor="nvidia"} 52`)
 	assertContainsMetric(t, metrics, `gpu_memory_total_bytes{gpu="0",name="NVIDIA A800",uuid="GPU-123",vendor="nvidia"} 85899345920`)
+}
+
+func TestResolveCommandPath_UsesOptBinFallback(t *testing.T) {
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "dtk-25.04", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("os.MkdirAll() error = %v", err)
+	}
+
+	commandPath := filepath.Join(binDir, "rocm-smi")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	manager := &Manager{
+		executor: stubCommandExecutor{},
+		optBinGlobs: []string{
+			filepath.Join(tempDir, "*", "bin", "rocm-smi"),
+		},
+	}
+
+	resolved, err := manager.resolveCommandPath("rocm-smi")
+	if err != nil {
+		t.Fatalf("resolveCommandPath() error = %v", err)
+	}
+	if resolved != commandPath {
+		t.Fatalf("resolveCommandPath() = %q, want %q", resolved, commandPath)
+	}
 }
 
 func assertContainsMetric(t *testing.T, metrics, want string) {

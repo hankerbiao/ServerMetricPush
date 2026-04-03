@@ -16,6 +16,7 @@ NODE_PUSH_EXPORTER_CONFIG_DIR="/etc/node-push-exporter"
 NODE_PUSH_EXPORTER_CONFIG_PATH="${NODE_PUSH_EXPORTER_CONFIG_DIR}/config.yaml"
 NODE_PUSH_EXPORTER_SERVICE_PATH="/etc/systemd/system/node-push-exporter.service"
 ERROR_TIP="联系管理员，光圈@libiao1"
+DEFAULT_SERVICE_PATH="/usr/local/bin:/usr/bin:/bin"
 
 log() {
   printf '[install] %s\n' "$*"
@@ -195,6 +196,8 @@ EOF
 
 write_node_push_exporter_service() {
   local target_path="$1"
+  local service_path_env
+  service_path_env="$(build_service_path_env)"
   cat > "${target_path}" <<'EOF'
 [Unit]
 Description=Node Metrics Push Exporter
@@ -210,12 +213,35 @@ Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EOF
+  cat >> "${target_path}" <<EOF
+Environment=PATH=${service_path_env}
+EOF
+  cat >> "${target_path}" <<'EOF'
 SyslogIdentifier=node-push-exporter
 
 [Install]
 WantedBy=multi-user.target
 EOF
+}
+
+build_service_path_env() {
+  local path_value="${DEFAULT_SERVICE_PATH}"
+  local rocm_smi_path
+  local rocm_smi_dir
+
+  rocm_smi_path="$(command -v rocm-smi 2>/dev/null || true)"
+  if [[ -n "${rocm_smi_path}" ]]; then
+    rocm_smi_dir="$(dirname "${rocm_smi_path}")"
+    case ":${path_value}:" in
+      *":${rocm_smi_dir}:"*) ;;
+      *)
+        path_value="${path_value}:${rocm_smi_dir}"
+        ;;
+    esac
+  fi
+
+  printf '%s' "${path_value}"
 }
 
 require_root() {

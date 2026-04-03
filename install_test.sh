@@ -62,6 +62,16 @@ assert_eq \
   "push service file content"
 rm -f "${push_service_file}"
 
+assert_eq \
+  "$(bash -lc 'source "'"${INSTALL_SH}"'"; command() { if [[ "$1" == "-v" && "$2" == "rocm-smi" ]]; then printf "/opt/dtk-25.04/bin/rocm-smi\n"; return 0; fi; builtin command "$@"; }; printf "%s" "$(build_service_path_env)"')" \
+  "/usr/local/bin:/usr/bin:/bin:/opt/dtk-25.04/bin" \
+  "service path env appends detected rocm-smi dir"
+
+assert_eq \
+  "$(bash -lc 'source "'"${INSTALL_SH}"'"; command() { if [[ "$1" == "-v" && "$2" == "rocm-smi" ]]; then return 1; fi; builtin command "$@"; }; printf "%s" "$(build_service_path_env)"')" \
+  "/usr/local/bin:/usr/bin:/bin" \
+  "service path env keeps default when rocm-smi missing"
+
 assert_fail \
   "darwin amd64 should fail" \
   bash -lc 'uname() { if [[ "$1" == "-s" ]]; then printf "Darwin\n"; else printf "x86_64\n"; fi; }; source "'"${INSTALL_SH}"'"; resolve_files'

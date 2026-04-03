@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,9 +32,10 @@ func (osCommandExecutor) CombinedOutput(ctx context.Context, name string, args .
 }
 
 type Manager struct {
-	timeout  time.Duration
-	executor commandExecutor
-	now      func() time.Time
+	timeout     time.Duration
+	executor    commandExecutor
+	now         func() time.Time
+	optBinGlobs []string
 }
 
 // deviceMetrics 表示单张 GPU 在导出前的统一指标视图。
@@ -65,6 +68,10 @@ func NewManager(timeout time.Duration) *Manager {
 		timeout:  timeout,
 		executor: osCommandExecutor{},
 		now:      time.Now,
+		optBinGlobs: []string{
+			"/opt/*/bin/rocm-smi",
+			"/opt/*/bin/nvidia-smi",
+		},
 	}
 }
 
@@ -98,14 +105,15 @@ func (m *Manager) Collect() (string, error) {
 // collectNvidia 使用 nvidia-smi 先探测设备数量，再批量查询指标。
 // 先执行 `nvidia-smi -L` 是为了在查询失败前仍能区分“没有设备”和“采集失败”。
 func (m *Manager) collectNvidia() string {
-	if _, err := m.executor.LookPath("nvidia-smi"); err != nil {
+	commandPath, err := m.resolveCommandPath("nvidia-smi")
+	if err != nil {
 		return ""
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
-	listOutput, err := m.executor.CombinedOutput(ctx, "nvidia-smi", "-L")
+	listOutput, err := m.executor.CombinedOutput(ctx, commandPath, "-L")
 	if err != nil {
 		return vendorFailureMetrics("nvidia", err)
 	}
@@ -120,7 +128,7 @@ func (m *Manager) collectNvidia() string {
 
 	queryOutput, err := m.executor.CombinedOutput(
 		ctx,
-		"nvidia-smi",
+		commandPath,
 		"--query-gpu=index,name,uuid,temperature.gpu,utilization.gpu,memory.total,memory.used,power.draw",
 		"--format=csv,noheader,nounits",
 	)
@@ -138,14 +146,15 @@ func (m *Manager) collectNvidia() string {
 
 // collectROCM 通过 rocm-smi 的 JSON 输出采集 AMD/ROCm 设备指标。
 func (m *Manager) collectROCM() string {
-	if _, err := m.executor.LookPath("rocm-smi"); err != nil {
+	commandPath, err := m.resolveCommandPath("rocm-smi")
+	if err != nil {
 		return ""
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
-	output, err := m.executor.CombinedOutput(ctx, "rocm-smi", "--showtemp", "--showuse", "--showmemuse", "--json")
+	output, err := m.executor.CombinedOutput(ctx, commandPath, "--showtemp", "--showuse", "--showmemuse", "--json")
 	if err != nil {
 		return vendorFailureMetrics("rocm", err)
 	}
@@ -156,6 +165,40 @@ func (m *Manager) collectROCM() string {
 	}
 
 	return renderVendorMetrics("rocm", devices)
+}
+
+func (m *Manager) resolveCommandPath(name string) (string, error) {
+	if m.executor != nil {
+		if resolved, err := m.executor.LookPath(name); err == nil {
+			return resolved, nil
+		}
+	}
+
+	globs := m.optBinGlobs
+	if len(globs) == 0 {
+		globs = []string{
+			"/opt/*/bin/" + name,
+		}
+	}
+
+	for _, pattern := range globs {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		sort.Strings(matches)
+		for _, match := range matches {
+			if filepath.Base(match) != name {
+				continue
+			}
+			info, err := os.Stat(match)
+			if err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+				return match, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("%s not found", name)
 }
 
 // renderVendorMetrics 将统一结构渲染为最终的 Prometheus 文本格式。
