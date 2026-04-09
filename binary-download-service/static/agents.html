@@ -73,6 +73,10 @@
         .online { background: #dcfce7; color: #166534; }
         .degraded { background: #fef3c7; color: #92400e; }
         .offline { background: #fee2e2; color: #991b1b; }
+        .accepted, .idle { background: #dbeafe; color: #1d4ed8; }
+        .succeeded { background: #dcfce7; color: #166534; }
+        .failed, .rolled_back { background: #fee2e2; color: #991b1b; }
+        .installing, .validating, .downloading, .restarting { background: #fef3c7; color: #92400e; }
         .content {
             padding: 20px 24px;
         }
@@ -94,6 +98,65 @@
             padding-left: 18px;
             margin: 0;
         }
+        .stack {
+            display: grid;
+            gap: 16px;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            background: #f8fafc;
+        }
+        .card h3 {
+            margin: 0 0 12px;
+            font-size: 15px;
+        }
+        .field {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .field label {
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .field select, .field button {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+        .field button {
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        .field button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .btn-open-update {
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: none;
+            background: #2563eb;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .muted {
+            color: #6b7280;
+            font-size: 13px;
+        }
+        .history-table th,
+        .history-table td {
+            padding: 10px 12px;
+        }
     </style>
 </head>
 <body>
@@ -103,7 +166,11 @@
             <h1>节点状态</h1>
             <p>查看 node-push-exporter 当前注册状态、推送结果和最近异常。</p>
         </div>
-        <a href="/">返回文件管理</a>
+        <div>
+            <a href="/versions">版本管理</a>
+            <span style="display:inline-block;width:12px"></span>
+            <a href="/">返回文件管理</a>
+        </div>
     </div>
 
     <div class="grid">
@@ -118,10 +185,11 @@
                     <th>平台</th>
                     <th>最后心跳</th>
                     <th>最近错误</th>
+                    <th>操作</th>
                 </tr>
                 </thead>
                 <tbody id="agents-body">
-                <tr><td colspan="6">加载中...</td></tr>
+                <tr><td colspan="7">加载中...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -149,13 +217,91 @@
         return `<span class="badge ${status}">${status}</span>`;
     }
 
+    async function loadVersions() {
+        const response = await fetch("/api/versions");
+        if (!response.ok) {
+            return { binary_versions: [], config_templates: [] };
+        }
+        return response.json();
+    }
+
+    function renderUpdateOptions(agent, versions) {
+        const binaryOptions = (versions.binary_versions || [])
+            .filter(item => item.os === agent.os && item.arch === agent.arch)
+            .map(item => `<option value="${item.version}">${item.version} · ${item.filename}</option>`)
+            .join("");
+        const configOptions = (versions.config_templates || [])
+            .map(item => `<option value="${item.id}">${item.name} · ${item.version}</option>`)
+            .join("");
+
+        return `
+            <div class="card">
+                <h3>发起更新</h3>
+                <div class="field">
+                    <label for="update-type">更新类型</label>
+                    <select id="update-type">
+                        <option value="binary_update">升级二进制</option>
+                        <option value="config_update">更新配置</option>
+                    </select>
+                </div>
+                <div class="field" id="binary-version-field">
+                    <label for="binary-version">目标版本</label>
+                    <select id="binary-version">
+                        ${binaryOptions || '<option value="">暂无匹配版本</option>'}
+                    </select>
+                </div>
+                <div class="field" id="config-template-field" style="display:none">
+                    <label for="config-template">配置模板</label>
+                    <select id="config-template">
+                        ${configOptions || '<option value="">暂无配置模板</option>'}
+                    </select>
+                </div>
+                <div class="field">
+                    <button id="submit-update">下发更新</button>
+                </div>
+                <div class="muted" id="update-submit-result">选择一个目标版本或配置模板后执行。</div>
+            </div>
+        `;
+    }
+
+    function renderUpdateHistory(updates) {
+        if (!updates.length) {
+            return '<div class="muted">暂无更新记录。</div>';
+        }
+
+        return `
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>类型</th>
+                        <th>目标</th>
+                        <th>状态</th>
+                        <th>错误</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${updates.map(update => `
+                        <tr>
+                            <td>${formatTime(update.created_at)}</td>
+                            <td>${update.update_type}</td>
+                            <td>${update.target_version || update.to_binary_version || update.to_config_version || "-"}</td>
+                            <td>${renderBadge(update.status)}</td>
+                            <td>${update.detail_message || "-"}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        `;
+    }
+
     async function loadAgents() {
         const response = await fetch("/api/agents");
         const data = await response.json();
         const agents = data.agents || [];
 
         if (!agents.length) {
-            tbody.innerHTML = '<tr><td colspan="6">暂无注册节点</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7">暂无注册节点</td></tr>';
             detail.innerHTML = "当前没有节点数据。";
             return;
         }
@@ -168,12 +314,20 @@
                 <td>${agent.os}/${agent.arch}</td>
                 <td>${formatTime(agent.last_seen_at)}</td>
                 <td>${agent.last_error || "-"}</td>
+                <td><button class="btn-open-update" data-agent-id="${agent.agent_id}">更新</button></td>
             </tr>
         `).join("");
 
         Array.from(tbody.querySelectorAll("tr[data-agent-id]")).forEach(row => {
             row.addEventListener("click", () => {
                 selectedAgentId = row.dataset.agentId;
+                loadAgentDetail(selectedAgentId);
+            });
+        });
+        Array.from(tbody.querySelectorAll(".btn-open-update")).forEach(button => {
+            button.addEventListener("click", (event) => {
+                event.stopPropagation();
+                selectedAgentId = button.dataset.agentId;
                 loadAgentDetail(selectedAgentId);
             });
         });
@@ -192,21 +346,90 @@
         }
 
         const data = await response.json();
+        const versions = await loadVersions();
         const agent = data.agent;
         const events = data.events || [];
+        const updates = data.updates || [];
 
         detail.innerHTML = `
-            <div class="meta">
-                <div><strong>主机</strong>${agent.hostname} (${agent.ip || "未知"})</div>
-                <div><strong>状态</strong>${renderBadge(agent.status)}</div>
-                <div><strong>Pushgateway</strong>${agent.pushgateway_url}</div>
-                <div><strong>node_exporter</strong>${agent.node_exporter_metrics_url}</div>
-                <div><strong>最近成功推送</strong>${formatTime(agent.last_push_success_at)}</div>
-                <div><strong>连续失败次数</strong>${agent.push_fail_count}</div>
-                <div><strong>最近异常</strong>${agent.last_error || "-"}</div>
-                <div><strong>最近事件</strong>${events.length ? `<ul>${events.map(event => `<li>${formatTime(event.created_at)} ${event.event_type}: ${event.message}</li>`).join("")}</ul>` : "暂无事件"}</div>
+            <div class="stack">
+                <div class="meta">
+                    <div><strong>主机</strong>${agent.hostname} (${agent.ip || "未知"})</div>
+                    <div><strong>状态</strong>${renderBadge(agent.status)}</div>
+                    <div><strong>当前二进制版本</strong>${agent.version}</div>
+                    <div><strong>当前配置版本</strong>${agent.current_config_version || "-"}</div>
+                    <div><strong>最近更新状态</strong>${renderBadge(agent.update_status || "idle")}</div>
+                    <div><strong>最近更新目标</strong>${agent.update_target || "-"}</div>
+                    <div><strong>最近更新错误</strong>${agent.update_error || "-"}</div>
+                    <div><strong>Pushgateway</strong>${agent.pushgateway_url}</div>
+                    <div><strong>node_exporter</strong>${agent.node_exporter_metrics_url}</div>
+                    <div><strong>最近成功推送</strong>${formatTime(agent.last_push_success_at)}</div>
+                    <div><strong>连续失败次数</strong>${agent.push_fail_count}</div>
+                    <div><strong>最近异常</strong>${agent.last_error || "-"}</div>
+                    <div><strong>最近事件</strong>${events.length ? `<ul>${events.map(event => `<li>${formatTime(event.created_at)} ${event.event_type}: ${event.message}</li>`).join("")}</ul>` : "暂无事件"}</div>
+                </div>
+                ${renderUpdateOptions(agent, versions)}
+                <div class="card">
+                    <h3>更新历史</h3>
+                    ${renderUpdateHistory(updates)}
+                </div>
             </div>
         `;
+
+        bindUpdateForm(agentId);
+    }
+
+    function bindUpdateForm(agentId) {
+        const typeSelect = document.getElementById("update-type");
+        const binaryField = document.getElementById("binary-version-field");
+        const configField = document.getElementById("config-template-field");
+        const submitButton = document.getElementById("submit-update");
+        const submitResult = document.getElementById("update-submit-result");
+
+        if (!typeSelect || !submitButton) {
+            return;
+        }
+
+        const syncFields = () => {
+            const isBinary = typeSelect.value === "binary_update";
+            binaryField.style.display = isBinary ? "grid" : "none";
+            configField.style.display = isBinary ? "none" : "grid";
+        };
+
+        syncFields();
+        typeSelect.addEventListener("change", syncFields);
+
+        submitButton.addEventListener("click", async () => {
+            const updateType = typeSelect.value;
+            const payload = { update_type: updateType };
+            if (updateType === "binary_update") {
+                payload.target_version = document.getElementById("binary-version").value;
+            } else {
+                payload.config_template_id = Number(document.getElementById("config-template").value);
+            }
+
+            submitButton.disabled = true;
+            submitResult.textContent = "正在下发更新指令...";
+            try {
+                const response = await fetch(`/api/agents/${agentId}/updates`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    submitResult.textContent = result.detail || "更新下发失败";
+                    return;
+                }
+                submitResult.textContent = `已受理: ${result.update_type} -> ${result.target_version || result.to_config_version || "-"}`;
+                await loadAgentDetail(agentId);
+                await loadAgents();
+            } catch (error) {
+                submitResult.textContent = "更新请求失败";
+            } finally {
+                submitButton.disabled = false;
+            }
+        });
     }
 
     loadAgents();

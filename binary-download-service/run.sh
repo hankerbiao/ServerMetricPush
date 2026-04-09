@@ -17,7 +17,7 @@ start() {
     fi
 
     pip install -r requirements.txt -q
-    nohup uvicorn main:app --host 0.0.0.0 --port 8080 > "$LOG_FILE" 2>&1 &
+    nohup uvicorn main:app --host 0.0.0.0 --port 8888 > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     echo "Service started (PID: $(cat $PID_FILE))"
 }

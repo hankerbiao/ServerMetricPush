@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,7 +24,9 @@ import (
 	"node-push-exporter/src/config"
 	"node-push-exporter/src/controlplane"
 	"node-push-exporter/src/gpu"
+	"node-push-exporter/src/hardware"
 	"node-push-exporter/src/pusher"
+	"node-push-exporter/src/update"
 )
 
 var (
@@ -38,6 +41,10 @@ type nodeExporterProcess struct {
 }
 
 type gpuMetricsCollector interface {
+	Collect() (string, error)
+}
+
+type hardwareMetricsCollector interface {
 	Collect() (string, error)
 }
 
@@ -148,6 +155,14 @@ func main() {
 		pusher.WithTimeout(time.Duration(cfg.Pushgateway.Timeout)*time.Second),
 	)
 	gpuCollector := gpu.NewManager(5 * time.Second)
+	var hardwareCollector hardwareMetricsCollector
+	if cfg.Hardware.Enabled {
+		hardwareCollector = hardware.NewManager(
+			time.Duration(cfg.Hardware.Timeout)*time.Second,
+			cfg.Hardware.IncludeSerials,
+			cfg.Hardware.IncludeVirtualDevices,
+		)
+	}
 
 	ticker := time.NewTicker(time.Duration(cfg.Pushgateway.Interval) * time.Second)
 	defer ticker.Stop()
@@ -156,13 +171,57 @@ func main() {
 	var controlPlaneClient *controlplane.Client
 	var registerRequest controlplane.RegisterRequest
 	var heartbeatCh <-chan time.Time
+	var updateManager *update.Manager
+	var updateServer *http.Server
 	registered := false
+	currentConfigVersion := "default"
+	if cfg.Update.Enabled {
+		executablePath, err := os.Executable()
+		if err != nil {
+			log.Fatalf("获取当前可执行文件路径失败: %v", err)
+		}
+
+		updateManager = update.NewManager(update.Options{
+			ListenAddr:   cfg.Update.ListenAddr,
+			AllowedCIDRs: cfg.Update.AllowedCIDRs,
+			StatusFile:   cfg.Update.StatusFile,
+			WorkDir:      cfg.Update.WorkDir,
+			Runner: update.NewExecutor(update.ExecutorOptions{
+				BinaryPath:           executablePath,
+				ConfigPath:           *configPath,
+				CurrentVersion:       version,
+				CurrentConfigVersion: currentConfigVersion,
+				Downloader:           update.HTTPDownloader,
+				ServiceManager:       update.SystemdServiceManager{ServiceName: "node-push-exporter"},
+				ConfigValidator: func(path string) error {
+					_, err := config.Load(path)
+					return err
+				},
+			}),
+			VersionProvider: func() string { return version },
+		})
+		updateSnapshot := updateManager.Reconcile(version, currentConfigVersion)
+		if updateSnapshot.CurrentConfigVersion != "" {
+			currentConfigVersion = updateSnapshot.CurrentConfigVersion
+		}
+
+		updateServer = &http.Server{
+			Addr:    cfg.Update.ListenAddr,
+			Handler: updateManager.Handler(),
+		}
+		go func() {
+			if err := updateServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("更新接口监听失败: %v", err)
+			}
+		}()
+		log.Printf("更新接口已启动，监听地址: %s", cfg.Update.ListenAddr)
+	}
 	if cfg.ControlPlane.Enabled() {
 		controlPlaneClient = controlplane.NewClient(
 			cfg.ControlPlane.URL,
 			time.Duration(cfg.Pushgateway.Timeout)*time.Second,
 		)
-		registerRequest = buildRegisterRequest(cfg)
+		registerRequest = buildRegisterRequest(cfg, cfg.Update.ListenAddr, currentConfigVersion)
 		if err := controlPlaneClient.Register(registerRequest); err != nil {
 			log.Printf("控制面注册失败，后续会继续重试: %v", err)
 		} else {
@@ -180,14 +239,14 @@ func main() {
 
 	time.Sleep(2 * time.Second)
 
-	if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector); err != nil {
+	if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector, hardwareCollector); err != nil {
 		log.Printf("首次推送失败: %v", err)
 	}
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector); err != nil {
+			if err := fetchAndPush(cfg.NodeExporter.MetricsURL, pusherClient, runtimeState, gpuCollector, hardwareCollector); err != nil {
 				log.Printf("推送失败: %v", err)
 			}
 		case <-heartbeatCh:
@@ -204,7 +263,18 @@ func main() {
 				log.Printf("控制面注册成功，节点ID: %s", registerRequest.AgentID)
 			}
 
-			if err := controlPlaneClient.Heartbeat(runtimeState.Snapshot(registerRequest.AgentID)); err != nil {
+			heartbeatPayload := runtimeState.Snapshot(registerRequest.AgentID)
+			if updateManager != nil {
+				updateSnapshot := updateManager.Snapshot()
+				heartbeatPayload.UpdateInProgress = updateSnapshot.InProgress
+				heartbeatPayload.LastUpdateRequestID = updateSnapshot.RequestID
+				heartbeatPayload.LastUpdateType = updateSnapshot.UpdateType
+				heartbeatPayload.LastUpdateStatus = updateSnapshot.Status
+				heartbeatPayload.LastUpdateTarget = updateSnapshot.TargetVersion
+				heartbeatPayload.LastUpdateError = updateSnapshot.Error
+				heartbeatPayload.CurrentConfigVersion = updateSnapshot.CurrentConfigVersion
+			}
+			if err := controlPlaneClient.Heartbeat(heartbeatPayload); err != nil {
 				if apiErr, ok := err.(*controlplane.APIError); ok && apiErr.StatusCode == http.StatusNotFound {
 					registered = false
 					log.Printf("控制面心跳返回节点不存在，下次周期重新注册: %v", err)
@@ -215,6 +285,9 @@ func main() {
 			}
 		case sig := <-sigChan:
 			log.Printf("收到信号 %v, 正在关闭...", sig)
+			if updateServer != nil {
+				_ = updateServer.Close()
+			}
 			return
 		}
 	}
@@ -350,7 +423,7 @@ func (p *nodeExporterProcess) Stop() {
 		p.cmd.Wait()
 	}
 }
-func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *controlPlaneRuntimeState, gpuCollector gpuMetricsCollector) error {
+func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *controlPlaneRuntimeState, gpuCollector gpuMetricsCollector, hardwareCollector hardwareMetricsCollector) error {
 	metrics, err := fetchMetrics(metricsURL)
 	if err != nil {
 		if runtimeState != nil {
@@ -365,6 +438,15 @@ func fetchAndPush(metricsURL string, pusher *pusher.Pusher, runtimeState *contro
 			log.Printf("GPU指标采集失败，继续推送node_exporter指标: %v", err)
 		} else {
 			metrics = mergeMetrics(metrics, gpuMetrics)
+		}
+	}
+
+	if hardwareCollector != nil {
+		hardwareMetrics, err := hardwareCollector.Collect()
+		if err != nil {
+			log.Printf("硬件概况采集失败，继续推送已有指标: %v", err)
+		} else {
+			metrics = mergeMetrics(metrics, hardwareMetrics)
 		}
 	}
 
@@ -428,7 +510,7 @@ func fetchMetrics(url string) (string, error) {
 	return metrics, nil
 }
 
-func buildRegisterRequest(cfg *config.Config) controlplane.RegisterRequest {
+func buildRegisterRequest(cfg *config.Config, updateListenAddr, currentConfigVersion string) controlplane.RegisterRequest {
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "unknown-host"
@@ -445,6 +527,8 @@ func buildRegisterRequest(cfg *config.Config) controlplane.RegisterRequest {
 		PushIntervalSeconds:    cfg.Pushgateway.Interval,
 		NodeExporterPort:       cfg.NodeExporter.Port,
 		NodeExporterMetricsURL: cfg.NodeExporter.MetricsURL,
+		UpdateListenAddr:       updateListenAddr,
+		CurrentConfigVersion:   currentConfigVersion,
 		StartedAt:              time.Now().UTC(),
 	}
 }

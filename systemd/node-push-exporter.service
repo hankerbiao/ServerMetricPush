@@ -23,6 +23,7 @@ SyslogIdentifier=node-push-exporter
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/usr/local/bin /etc/node-push-exporter /var/lib/node-push-exporter
 
 [Install]
 WantedBy=multi-user.target

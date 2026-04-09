@@ -2,8 +2,8 @@
 
 启动本机 `node_exporter`，抓取 `/metrics`，再把指标推到 Prometheus Pushgateway。
 
-面向最终用户的安装、卸载和排障说明见 [用户手册](/Users/libiao/Documents/push_node/docs/user-manual.md)。
-GPU 采集行为和指标名称见 [GPU 指标采集说明](/Users/libiao/Documents/push_node/docs/gpu-metrics.md)。
+面向最终用户的安装、卸载和排障说明见 [用户手册](docs/user-manual.md)。
+GPU 采集行为、失败处理和指标名称见 [GPU 指标采集说明](docs/gpu-metrics.md)。
 
 ## 运行方式
 
@@ -22,7 +22,7 @@ go run ./src -config ./config.yml
 
 ## 配置文件
 
-配置格式是 `key=value`，默认示例就在仓库根目录 [config.yml](/Users/libiao/Documents/push_node/config.yml)。
+配置格式是 `key=value`，默认示例见仓库根目录的 [config.yml](config.yml)。
 
 ```ini
 # Pushgateway 设置
@@ -38,6 +38,12 @@ node_exporter.path=node_exporter
 node_exporter.port=9100
 node_exporter.metrics_url=http://localhost:9100/metrics
 
+# 硬件概况采集设置
+hardware.enabled=true
+hardware.timeout=5
+hardware.include_serials=true
+hardware.include_virtual_devices=false
+
 # 主服务设置（可选）
 control_plane.url=http://127.0.0.1:8080
 control_plane.heartbeat_interval=30
@@ -46,6 +52,9 @@ control_plane.heartbeat_interval=30
 必填项缺失时，程序会在启动阶段直接报错退出。
 `pushgateway.instance` 留空时，程序会自动回退为本机 IPv4；如果拿不到 IPv4，则回退为 hostname。
 如果未配置 `control_plane.url`，主动注册功能会自动关闭，不影响原有 Pushgateway 推送。
+`hardware.enabled=true` 时，程序会额外采集主机、CPU、内存、磁盘和网卡概况，并与 `node_exporter` 指标一起推送。
+内存硬件指标会优先尝试读取 `dmidecode --type memory`，按内存槽位补充品牌、型号、速率、容量等信息；如果系统未安装 `dmidecode`、权限不足，或当前环境拿不到 SMBIOS/DMI 数据，会自动降级为仅上报总内存容量。
+`hardware.include_serials=true` 时，会把序列号、UUID、MAC 等唯一标识以标签形式写入硬件 `info` 指标。
 
 ## 本地调试
 
@@ -129,6 +138,12 @@ sudo systemctl status node-push-exporter
 - `./node_exporter` 是否存在并有执行权限
 - `node_exporter.port` 对应端口是否被占用
 - `pushgateway.url` 是否可达
+
+硬件概况采集依赖 Linux 上的 `/sys`、`/proc` 和 `lsblk`。如果日志出现“硬件概况采集失败”，优先检查：
+
+- 当前机器是否为 Linux
+- `lsblk` 是否可执行
+- `/sys/class/dmi/id`、`/sys/class/net`、`/proc/cpuinfo`、`/proc/meminfo` 是否可读
 
 如果是 systemd 环境，先看：
 

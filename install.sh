@@ -14,6 +14,9 @@ NODE_PUSH_EXPORTER_BIN="/usr/local/bin/node-push-exporter"
 NODE_PUSH_EXPORTER_SERVICE_NAME="node-push-exporter"
 NODE_PUSH_EXPORTER_CONFIG_DIR="/etc/node-push-exporter"
 NODE_PUSH_EXPORTER_CONFIG_PATH="${NODE_PUSH_EXPORTER_CONFIG_DIR}/config.yaml"
+NODE_PUSH_EXPORTER_STATE_DIR="/var/lib/node-push-exporter"
+NODE_PUSH_EXPORTER_STATUS_FILE="${NODE_PUSH_EXPORTER_STATE_DIR}/update-status.json"
+NODE_PUSH_EXPORTER_WORK_DIR="${NODE_PUSH_EXPORTER_STATE_DIR}/update-work"
 NODE_PUSH_EXPORTER_SERVICE_PATH="/etc/systemd/system/node-push-exporter.service"
 ERROR_TIP="联系管理员，光圈@libiao1"
 DEFAULT_SERVICE_PATH="/usr/local/bin:/usr/bin:/bin"
@@ -219,6 +222,10 @@ Environment=PATH=${service_path_env}
 EOF
   cat >> "${target_path}" <<'EOF'
 SyslogIdentifier=node-push-exporter
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/usr/local/bin /etc/node-push-exporter /var/lib/node-push-exporter
 
 [Install]
 WantedBy=multi-user.target
@@ -242,6 +249,28 @@ build_service_path_env() {
   fi
 
   printf '%s' "${path_value}"
+}
+
+append_config_if_missing() {
+  local config_path="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -q "^${key}=" "${config_path}"; then
+    return
+  fi
+
+  printf '\n%s=%s\n' "${key}" "${value}" >> "${config_path}"
+}
+
+ensure_update_config_defaults() {
+  local config_path="$1"
+
+  append_config_if_missing "${config_path}" "update.enabled" "true"
+  append_config_if_missing "${config_path}" "update.listen_addr" "127.0.0.1:18080"
+  append_config_if_missing "${config_path}" "update.allowed_cidrs" "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  append_config_if_missing "${config_path}" "update.status_file" "${NODE_PUSH_EXPORTER_STATUS_FILE}"
+  append_config_if_missing "${config_path}" "update.work_dir" "${NODE_PUSH_EXPORTER_WORK_DIR}"
 }
 
 require_root() {
@@ -317,6 +346,7 @@ install_node_push_exporter() {
   run_step "设置 node-push-exporter 可执行权限" chmod +x "${NODE_PUSH_EXPORTER_BIN}"
 
   run_step "创建配置目录 ${NODE_PUSH_EXPORTER_CONFIG_DIR}" mkdir -p "${NODE_PUSH_EXPORTER_CONFIG_DIR}"
+  run_step "创建状态目录 ${NODE_PUSH_EXPORTER_STATE_DIR}" mkdir -p "${NODE_PUSH_EXPORTER_STATE_DIR}" "${NODE_PUSH_EXPORTER_WORK_DIR}"
   if [[ ! -f "${NODE_PUSH_EXPORTER_CONFIG_PATH}" ]]; then
     [[ -n "${extracted_config}" ]] || {
       fail "${archive_path} 中未找到 config.yml"
@@ -325,12 +355,14 @@ install_node_push_exporter() {
   else
     log "结果: 保留现有配置 ${NODE_PUSH_EXPORTER_CONFIG_PATH}"
   fi
+  run_step "补齐被动更新默认配置" ensure_update_config_defaults "${NODE_PUSH_EXPORTER_CONFIG_PATH}"
 
   write_node_push_exporter_service "${NODE_PUSH_EXPORTER_SERVICE_PATH}"
   log "结果: 已写入服务文件 ${NODE_PUSH_EXPORTER_SERVICE_PATH}"
   restore_selinux_context \
     "${NODE_PUSH_EXPORTER_BIN}" \
     "${NODE_PUSH_EXPORTER_CONFIG_DIR}" \
+    "${NODE_PUSH_EXPORTER_STATE_DIR}" \
     "${NODE_PUSH_EXPORTER_SERVICE_PATH}"
   run_step "刷新 systemd 配置" systemctl daemon-reload
   run_step "启用并启动 ${NODE_PUSH_EXPORTER_SERVICE_NAME}" systemctl enable --now "${NODE_PUSH_EXPORTER_SERVICE_NAME}"

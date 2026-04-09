@@ -8,6 +8,7 @@ NODE_EXPORTER_SERVICE_PATH="/etc/systemd/system/node_exporter.service"
 NODE_PUSH_EXPORTER_BIN="/usr/local/bin/node-push-exporter"
 NODE_PUSH_EXPORTER_SERVICE_NAME="node-push-exporter"
 NODE_PUSH_EXPORTER_CONFIG_DIR="/etc/node-push-exporter"
+NODE_PUSH_EXPORTER_STATE_DIR="/var/lib/node-push-exporter"
 NODE_PUSH_EXPORTER_SERVICE_PATH="/etc/systemd/system/node-push-exporter.service"
 ERROR_TIP="联系管理员，光圈@libiao1"
 
@@ -105,9 +106,11 @@ main() {
 
   remove_file_if_exists "${NODE_PUSH_EXPORTER_SERVICE_PATH}"
   remove_file_if_exists "${NODE_EXPORTER_SERVICE_PATH}"
+  remove_file_if_exists "${NODE_PUSH_EXPORTER_BIN}.bak"
   remove_file_if_exists "${NODE_PUSH_EXPORTER_BIN}"
   remove_file_if_exists "${NODE_EXPORTER_BIN}"
   remove_dir_if_exists "${NODE_PUSH_EXPORTER_CONFIG_DIR}"
+  remove_dir_if_exists "${NODE_PUSH_EXPORTER_STATE_DIR}"
 
   run_step "刷新 systemd 配置" systemctl daemon-reload
   log "结果: uninstall.sh 执行完成"

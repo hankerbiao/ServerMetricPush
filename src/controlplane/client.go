@@ -26,6 +26,8 @@ type RegisterRequest struct {
 	PushIntervalSeconds    int       `json:"push_interval_seconds"`
 	NodeExporterPort       int       `json:"node_exporter_port"`
 	NodeExporterMetricsURL string    `json:"node_exporter_metrics_url"`
+	UpdateListenAddr       string    `json:"update_listen_addr,omitempty"`
+	CurrentConfigVersion   string    `json:"current_config_version,omitempty"`
 	StartedAt              time.Time `json:"started_at"`
 }
 
@@ -35,14 +37,21 @@ type RegisterResponse struct {
 }
 
 type HeartbeatRequest struct {
-	AgentID           string     `json:"agent_id"`
-	Status            string     `json:"status"`
-	LastError         string     `json:"last_error,omitempty"`
-	LastPushAt        *time.Time `json:"last_push_at,omitempty"`
-	LastPushSuccessAt *time.Time `json:"last_push_success_at,omitempty"`
-	LastPushErrorAt   *time.Time `json:"last_push_error_at,omitempty"`
-	PushFailCount     int        `json:"push_fail_count"`
-	NodeExporterUp    bool       `json:"node_exporter_up"`
+	AgentID              string     `json:"agent_id"`
+	Status               string     `json:"status"`
+	LastError            string     `json:"last_error,omitempty"`
+	LastPushAt           *time.Time `json:"last_push_at,omitempty"`
+	LastPushSuccessAt    *time.Time `json:"last_push_success_at,omitempty"`
+	LastPushErrorAt      *time.Time `json:"last_push_error_at,omitempty"`
+	PushFailCount        int        `json:"push_fail_count"`
+	NodeExporterUp       bool       `json:"node_exporter_up"`
+	UpdateInProgress     bool       `json:"update_in_progress"`
+	LastUpdateRequestID  string     `json:"last_update_request_id,omitempty"`
+	LastUpdateType       string     `json:"last_update_type,omitempty"`
+	LastUpdateStatus     string     `json:"last_update_status,omitempty"`
+	LastUpdateTarget     string     `json:"last_update_target,omitempty"`
+	LastUpdateError      string     `json:"last_update_error,omitempty"`
+	CurrentConfigVersion string     `json:"current_config_version,omitempty"`
 }
 
 type APIError struct {
