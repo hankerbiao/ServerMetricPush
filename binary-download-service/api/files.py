@@ -10,6 +10,7 @@ from services.file_service import (
     create_file_record,
     delete_file_record,
     get_existing_file_or_404,
+    normalize_file_record_metadata,
     replace_existing_file_record,
     save_uploaded_file,
 )
@@ -23,6 +24,12 @@ def list_files(program: Optional[str] = None, db: Session = Depends(get_db)):
     if program:
         query = query.filter(FileRecord.program == program)
     files = query.order_by(FileRecord.uploaded_at.desc()).all()
+    changed = False
+    for file_record in files:
+        if normalize_file_record_metadata(db, file_record):
+            changed = True
+    if changed:
+        db.commit()
     return FileListResponse(files=[FileRecordResponse.model_validate(f) for f in files])
 
 

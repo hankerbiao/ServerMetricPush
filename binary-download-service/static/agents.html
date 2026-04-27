@@ -185,11 +185,10 @@
                     <th>平台</th>
                     <th>最后心跳</th>
                     <th>最近错误</th>
-                    <th>操作</th>
                 </tr>
                 </thead>
                 <tbody id="agents-body">
-                <tr><td colspan="7">加载中...</td></tr>
+                <tr><td colspan="6">加载中...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -217,17 +216,71 @@
         return `<span class="badge ${status}">${status}</span>`;
     }
 
-    async function loadVersions() {
-        const response = await fetch("/api/versions");
+    function createRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") {
+            return window.crypto.randomUUID();
+        }
+        return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    async function fetchConfigTemplate(templateId) {
+        const response = await fetch(`/api/config-templates/${templateId}`);
+        const result = await readResponseBody(response);
         if (!response.ok) {
-            return { binary_versions: [], config_templates: [] };
+            throw new Error(result.detail || "配置模板加载失败");
+        }
+        return result;
+    }
+
+    async function readResponseBody(response) {
+        const text = await response.text();
+        if (!text) {
+            return {};
+        }
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            return { detail: text };
+        }
+    }
+
+    function filterBinaryVersions(payload, agent) {
+        const files = payload.files || [];
+        return files.filter(item =>
+            item.program === "node-push-exporter" &&
+            item.os === agent.os &&
+            item.arch === agent.arch
+        );
+    }
+
+    async function loadBinaryVersions() {
+        const response = await fetch("/api/files?program=node-push-exporter");
+        if (!response.ok) {
+            return { files: [] };
         }
         return response.json();
     }
 
+    async function loadVersions() {
+        const [filePayload, configResponse] = await Promise.all([
+            loadBinaryVersions(),
+            fetch("/api/versions")
+        ]);
+
+        let configTemplates = [];
+        if (configResponse.ok) {
+            const versionsPayload = await configResponse.json();
+            configTemplates = versionsPayload.config_templates || [];
+        }
+
+        return {
+            binary_versions: filePayload.files || [],
+            config_templates: configTemplates
+        };
+    }
+
     function renderUpdateOptions(agent, versions) {
-        const binaryOptions = (versions.binary_versions || [])
-            .filter(item => item.os === agent.os && item.arch === agent.arch)
+        const binaryOptions = filterBinaryVersions({ files: versions.binary_versions || [] }, agent)
             .map(item => `<option value="${item.version}">${item.version} · ${item.filename}</option>`)
             .join("");
         const configOptions = (versions.config_templates || [])
@@ -376,10 +429,10 @@
             </div>
         `;
 
-        bindUpdateForm(agentId);
+        bindUpdateForm(agent, versions);
     }
 
-    function bindUpdateForm(agentId) {
+    function bindUpdateForm(agent, versions) {
         const typeSelect = document.getElementById("update-type");
         const binaryField = document.getElementById("binary-version-field");
         const configField = document.getElementById("config-template-field");
@@ -400,32 +453,45 @@
         typeSelect.addEventListener("change", syncFields);
 
         submitButton.addEventListener("click", async () => {
-            const updateType = typeSelect.value;
-            const payload = { update_type: updateType };
-            if (updateType === "binary_update") {
-                payload.target_version = document.getElementById("binary-version").value;
-            } else {
-                payload.config_template_id = Number(document.getElementById("config-template").value);
-            }
-
             submitButton.disabled = true;
             submitResult.textContent = "正在下发更新指令...";
             try {
-                const response = await fetch(`/api/agents/${agentId}/updates`, {
+                const updateType = typeSelect.value;
+                const baseURL = buildAgentUpdateBaseURL(agent);
+                let payload;
+
+                if (updateType === "binary_update") {
+                    const versionId = document.getElementById("binary-version").value;
+                    const version = (versions.binary_versions || []).find(item => item.version === versionId);
+                    if (!version) {
+                        throw new Error("请选择可用的目标版本");
+                    }
+                    payload = buildBinaryUpdatePayload(version);
+                } else {
+                    const templateId = document.getElementById("config-template").value;
+                    if (!templateId) {
+                        throw new Error("请选择配置模板");
+                    }
+                    const template = await fetchConfigTemplate(templateId);
+                    payload = buildConfigUpdatePayload(template);
+                }
+
+                const response = await fetch(`${baseURL}/internal/update`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    mode: "cors"
                 });
-                const result = await response.json();
+                const result = await readResponseBody(response);
                 if (!response.ok) {
-                    submitResult.textContent = result.detail || "更新下发失败";
+                    submitResult.textContent = result.detail || result.error || "更新下发失败";
                     return;
                 }
-                submitResult.textContent = `已受理: ${result.update_type} -> ${result.target_version || result.to_config_version || "-"}`;
-                await loadAgentDetail(agentId);
+                submitResult.textContent = `已受理: ${payload.update_type} -> ${payload.target_version || payload.config_version || "-"}`;
+                await loadAgentDetail(agent.agent_id);
                 await loadAgents();
             } catch (error) {
-                submitResult.textContent = "更新请求失败";
+                submitResult.textContent = error.message || "更新请求失败";
             } finally {
                 submitButton.disabled = false;
             }

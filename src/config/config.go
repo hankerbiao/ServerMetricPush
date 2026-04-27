@@ -11,8 +11,6 @@ type Config struct {
 	Pushgateway  PushgatewayConfig
 	NodeExporter NodeExporterConfig
 	ControlPlane ControlPlaneConfig
-	Hardware     HardwareConfig
-	Update       UpdateConfig
 }
 
 type PushgatewayConfig struct {
@@ -34,21 +32,6 @@ type ControlPlaneConfig struct {
 	HeartbeatInterval int
 }
 
-type HardwareConfig struct {
-	Enabled               bool
-	Timeout               int
-	IncludeSerials        bool
-	IncludeVirtualDevices bool
-}
-
-type UpdateConfig struct {
-	Enabled      bool
-	ListenAddr   string
-	AllowedCIDRs []string
-	StatusFile   string
-	WorkDir      string
-}
-
 func (c ControlPlaneConfig) Enabled() bool {
 	return c.URL != ""
 }
@@ -59,7 +42,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
-	cfg := defaultConfig()
+	cfg := &Config{}
 	lines := strings.Split(string(data), "\n")
 	for index, line := range lines {
 		line = strings.TrimSpace(line)
@@ -112,44 +95,6 @@ func Load(path string) (*Config, error) {
 				return nil, err
 			}
 			cfg.ControlPlane.HeartbeatInterval = i
-		case "hardware.enabled":
-			b, err := parseBool(key, value, index)
-			if err != nil {
-				return nil, err
-			}
-			cfg.Hardware.Enabled = b
-		case "hardware.timeout":
-			i, err := parseInt(key, value, index)
-			if err != nil {
-				return nil, err
-			}
-			cfg.Hardware.Timeout = i
-		case "hardware.include_serials":
-			b, err := parseBool(key, value, index)
-			if err != nil {
-				return nil, err
-			}
-			cfg.Hardware.IncludeSerials = b
-		case "hardware.include_virtual_devices":
-			b, err := parseBool(key, value, index)
-			if err != nil {
-				return nil, err
-			}
-			cfg.Hardware.IncludeVirtualDevices = b
-		case "update.enabled":
-			b, err := parseBool(key, value, index)
-			if err != nil {
-				return nil, err
-			}
-			cfg.Update.Enabled = b
-		case "update.listen_addr":
-			cfg.Update.ListenAddr = value
-		case "update.allowed_cidrs":
-			cfg.Update.AllowedCIDRs = parseCSV(value)
-		case "update.status_file":
-			cfg.Update.StatusFile = value
-		case "update.work_dir":
-			cfg.Update.WorkDir = value
 		}
 	}
 
@@ -158,24 +103,6 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-func defaultConfig() *Config {
-	return &Config{
-		Hardware: HardwareConfig{
-			Enabled:               true,
-			Timeout:               5,
-			IncludeSerials:        true,
-			IncludeVirtualDevices: false,
-		},
-		Update: UpdateConfig{
-			Enabled:      false,
-			ListenAddr:   "127.0.0.1:18080",
-			AllowedCIDRs: []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
-			StatusFile:   "/var/lib/node-push-exporter/update-status.json",
-			WorkDir:      "/var/lib/node-push-exporter/update-work",
-		},
-	}
 }
 
 func validate(cfg *Config) error {
@@ -203,27 +130,6 @@ func validate(cfg *Config) error {
 	}
 	if !cfg.ControlPlane.Enabled() && cfg.ControlPlane.HeartbeatInterval > 0 {
 		return fmt.Errorf("缺少必填配置项: control_plane.url")
-	}
-	if cfg.Hardware.Timeout <= 0 {
-		return fmt.Errorf("缺少必填配置项: hardware.timeout")
-	}
-	if cfg.Update.Enabled {
-		requiredFields := []struct {
-			name  string
-			valid bool
-		}{
-			{name: "update.listen_addr", valid: cfg.Update.ListenAddr != ""},
-			{name: "update.status_file", valid: cfg.Update.StatusFile != ""},
-			{name: "update.work_dir", valid: cfg.Update.WorkDir != ""},
-		}
-		for _, field := range requiredFields {
-			if !field.valid {
-				return fmt.Errorf("缺少必填配置项: %s", field.name)
-			}
-		}
-		if len(cfg.Update.AllowedCIDRs) == 0 {
-			return fmt.Errorf("缺少必填配置项: update.allowed_cidrs")
-		}
 	}
 
 	return nil

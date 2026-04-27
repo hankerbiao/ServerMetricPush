@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"node-push-exporter/src/metrics"
 )
 
 type commandExecutor interface {
@@ -198,7 +200,7 @@ func (m *Manager) resolveCommandPath(name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%s not found", name)
+	return "", fmt.Errorf("未找到 %s", name)
 }
 
 // renderVendorMetrics 将统一结构渲染为最终的 Prometheus 文本格式。
@@ -248,7 +250,7 @@ func vendorFailureMetrics(vendor string, err error) string {
 		metricLine("node_push_exporter_gpu_devices_detected", map[string]string{"vendor": vendor}, 0),
 	}
 	if err != nil {
-		lines = append(lines, "# gpu scrape error for "+vendor+": "+sanitizeComment(err.Error()))
+		lines = append(lines, "# gpu scrape error for "+vendor+": "+metrics.SanitizeComment(err.Error()))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -345,33 +347,7 @@ func appendMetric(lines *[]string, name string, labels map[string]string, value 
 
 // metricLine 负责统一拼接 Prometheus 指标行，并对 label 按 key 排序，保证输出稳定。
 func metricLine(name string, labels map[string]string, value float64) string {
-	if len(labels) == 0 {
-		return fmt.Sprintf("%s %s", name, strconv.FormatFloat(value, 'f', -1, 64))
-	}
-
-	keys := make([]string, 0, len(labels))
-	for key := range labels {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, fmt.Sprintf(`%s="%s"`, key, escapeLabelValue(labels[key])))
-	}
-
-	return fmt.Sprintf("%s{%s} %s", name, strings.Join(parts, ","), strconv.FormatFloat(value, 'f', -1, 64))
-}
-
-// escapeLabelValue 转义 Prometheus label 中的反斜杠、换行和双引号。
-func escapeLabelValue(value string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, "\n", `\n`, `"`, `\"`)
-	return replacer.Replace(value)
-}
-
-// sanitizeComment 将错误信息压缩为单行，避免注释内容破坏指标文本格式。
-func sanitizeComment(value string) string {
-	return strings.ReplaceAll(value, "\n", " ")
+	return metrics.MetricLineFloat(name, labels, value)
 }
 
 // countNonEmptyLines 统计非空行数量，用于从命令输出中估算检测到的设备数。

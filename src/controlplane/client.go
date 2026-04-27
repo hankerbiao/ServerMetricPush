@@ -26,8 +26,6 @@ type RegisterRequest struct {
 	PushIntervalSeconds    int       `json:"push_interval_seconds"`
 	NodeExporterPort       int       `json:"node_exporter_port"`
 	NodeExporterMetricsURL string    `json:"node_exporter_metrics_url"`
-	UpdateListenAddr       string    `json:"update_listen_addr,omitempty"`
-	CurrentConfigVersion   string    `json:"current_config_version,omitempty"`
 	StartedAt              time.Time `json:"started_at"`
 }
 
@@ -37,21 +35,14 @@ type RegisterResponse struct {
 }
 
 type HeartbeatRequest struct {
-	AgentID              string     `json:"agent_id"`
-	Status               string     `json:"status"`
-	LastError            string     `json:"last_error,omitempty"`
-	LastPushAt           *time.Time `json:"last_push_at,omitempty"`
-	LastPushSuccessAt    *time.Time `json:"last_push_success_at,omitempty"`
-	LastPushErrorAt      *time.Time `json:"last_push_error_at,omitempty"`
-	PushFailCount        int        `json:"push_fail_count"`
-	NodeExporterUp       bool       `json:"node_exporter_up"`
-	UpdateInProgress     bool       `json:"update_in_progress"`
-	LastUpdateRequestID  string     `json:"last_update_request_id,omitempty"`
-	LastUpdateType       string     `json:"last_update_type,omitempty"`
-	LastUpdateStatus     string     `json:"last_update_status,omitempty"`
-	LastUpdateTarget     string     `json:"last_update_target,omitempty"`
-	LastUpdateError      string     `json:"last_update_error,omitempty"`
-	CurrentConfigVersion string     `json:"current_config_version,omitempty"`
+	AgentID           string     `json:"agent_id"`
+	Status            string     `json:"status"`
+	LastError         string     `json:"last_error,omitempty"`
+	LastPushAt        *time.Time `json:"last_push_at,omitempty"`
+	LastPushSuccessAt *time.Time `json:"last_push_success_at,omitempty"`
+	LastPushErrorAt   *time.Time `json:"last_push_error_at,omitempty"`
+	PushFailCount     int        `json:"push_fail_count"`
+	NodeExporterUp    bool       `json:"node_exporter_up"`
 }
 
 type APIError struct {
@@ -84,18 +75,18 @@ func (c *Client) Heartbeat(payload HeartbeatRequest) error {
 func (c *Client) postJSON(path string, payload any, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal request failed: %w", err)
+		return fmt.Errorf("序列化请求失败: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create request failed: %w", err)
+		return fmt.Errorf("创建请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("send request failed: %w", err)
+		return fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -108,7 +99,7 @@ func (c *Client) postJSON(path string, payload any, out any) error {
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode response failed: %w", err)
+		return fmt.Errorf("解码响应失败: %w", err)
 	}
 
 	return nil

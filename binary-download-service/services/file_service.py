@@ -16,6 +16,9 @@ from database import FileRecord
 FILENAME_PATTERN = re.compile(
     r"^(?P<program>node_exporter|node-push-exporter)-(?P<version>.+?)[.-](?P<os>linux|darwin)-(?P<arch>amd64|arm64)(?P<ext>\.tar\.gz)?$"
 )
+NO_VERSION_FILENAME_PATTERN = re.compile(
+    r"^(?P<program>node_exporter|node-push-exporter)-(?P<os>linux|darwin)-(?P<arch>amd64|arm64|armv7)(?P<ext>\.tar\.gz)?$"
+)
 
 
 def parse_filename(filename: str) -> dict:
@@ -33,6 +36,15 @@ def parse_filename(filename: str) -> dict:
         return {
             "program": match.group("program"),
             "version": match.group("version"),
+            "os": match.group("os"),
+            "arch": match.group("arch"),
+        }
+
+    match = NO_VERSION_FILENAME_PATTERN.match(filename)
+    if match:
+        return {
+            "program": match.group("program"),
+            "version": filename,
             "os": match.group("os"),
             "arch": match.group("arch"),
         }
@@ -86,6 +98,29 @@ def create_file_record(db: Session, filename: str, file_path: str, file_size: in
     db.commit()
     db.refresh(file_record)
     return file_record
+
+
+def normalize_file_record_metadata(db: Session, file_record: FileRecord) -> bool:
+    parsed = parse_filename(file_record.filename)
+    changed = False
+
+    if file_record.program != parsed["program"]:
+        file_record.program = parsed["program"]
+        changed = True
+    if file_record.version != parsed["version"]:
+        file_record.version = parsed["version"]
+        changed = True
+    if file_record.os != parsed["os"]:
+        file_record.os = parsed["os"]
+        changed = True
+    if file_record.arch != parsed["arch"]:
+        file_record.arch = parsed["arch"]
+        changed = True
+
+    if changed:
+        db.flush()
+
+    return changed
 
 
 def delete_file_record(db: Session, file_id: int) -> None:

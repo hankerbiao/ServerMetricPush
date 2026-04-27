@@ -14,19 +14,6 @@ node_exporter.path=node_exporter
 node_exporter.port=9100
 node_exporter.metrics_url=http://localhost:9100/metrics
 
-# 硬件概况采集设置
-hardware.enabled=true
-hardware.timeout=5
-hardware.include_serials=true
-hardware.include_virtual_devices=false
-
 # 主服务设置（可选）
-control_plane.url=http://10.17.154.252:8888
+control_plane.url=http://10.2.48.120:8888
 control_plane.heartbeat_interval=30
-
-# 被动更新设置（可选）
-update.enabled=true
-update.listen_addr=127.0.0.1:18080
-update.allowed_cidrs=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-update.status_file=/var/lib/node-push-exporter/update-status.json
-update.work_dir=/var/lib/node-push-exporter/update-work

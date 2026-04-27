@@ -75,6 +75,14 @@ class UploadReplaceTests(unittest.TestCase):
         self.assertEqual(parsed["os"], "script")
         self.assertEqual(parsed["arch"], "shell")
 
+    def test_parse_filename_supports_node_push_exporter_without_version(self):
+        parsed = parse_filename("node-push-exporter-linux-amd64.tar.gz")
+
+        self.assertEqual(parsed["program"], "node-push-exporter")
+        self.assertEqual(parsed["version"], "node-push-exporter-linux-amd64.tar.gz")
+        self.assertEqual(parsed["os"], "linux")
+        self.assertEqual(parsed["arch"], "amd64")
+
     def test_download_returns_uploaded_file_content(self):
         content = b"downloadable-binary"
 

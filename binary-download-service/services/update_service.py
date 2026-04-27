@@ -1,5 +1,6 @@
 import uuid
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from fastapi import HTTPException
@@ -184,9 +185,14 @@ def dispatch_agent_update(agent: AgentRecord, update: AgentUpdateRecord, payload
 
 def agent_update_base_url(agent: AgentRecord) -> str:
     if agent.update_listen_addr:
-        if agent.update_listen_addr.startswith("http://") or agent.update_listen_addr.startswith("https://"):
-            return agent.update_listen_addr.rstrip("/")
-        return f"http://{agent.update_listen_addr}"
+        listen_addr = agent.update_listen_addr.strip()
+        if listen_addr.startswith("http://") or listen_addr.startswith("https://"):
+            return rewrite_loopback_url(listen_addr, agent.ip).rstrip("/")
+
+        host, sep, port = listen_addr.rpartition(":")
+        if sep and port and agent.ip and host in {"", "0.0.0.0", "127.0.0.1", "localhost"}:
+            return f"http://{agent.ip}:{port}"
+        return f"http://{listen_addr}"
     if agent.ip:
         return f"http://{agent.ip}:18080"
     raise HTTPException(status_code=400, detail="节点未上报更新监听地址")
@@ -194,3 +200,18 @@ def agent_update_base_url(agent: AgentRecord) -> str:
 
 def build_download_url(service_base_url: str, filename: str) -> str:
     return service_base_url.rstrip("/") + f"/download/{filename}"
+
+
+def rewrite_loopback_url(url: str, ip: Optional[str]) -> str:
+    if not ip:
+        return url
+
+    parsed = urlsplit(url)
+    host = parsed.hostname
+    if host not in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        return url
+
+    netloc = ip
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))

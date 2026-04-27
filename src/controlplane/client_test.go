@@ -37,8 +37,6 @@ func TestClient_RegisterSendsBearerTokenAndPayload(t *testing.T) {
 		PushIntervalSeconds:    30,
 		NodeExporterPort:       9100,
 		NodeExporterMetricsURL: "http://127.0.0.1:9100/metrics",
-		UpdateListenAddr:       "10.0.0.1:18080",
-		CurrentConfigVersion:   "default",
 		StartedAt:              time.Date(2026, 3, 27, 12, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -48,15 +46,9 @@ func TestClient_RegisterSendsBearerTokenAndPayload(t *testing.T) {
 	if gotPayload.AgentID != "agent-1" {
 		t.Fatalf("AgentID = %q, want %q", gotPayload.AgentID, "agent-1")
 	}
-	if gotPayload.UpdateListenAddr != "10.0.0.1:18080" {
-		t.Fatalf("UpdateListenAddr = %q, want %q", gotPayload.UpdateListenAddr, "10.0.0.1:18080")
-	}
-	if gotPayload.CurrentConfigVersion != "default" {
-		t.Fatalf("CurrentConfigVersion = %q, want %q", gotPayload.CurrentConfigVersion, "default")
-	}
 }
 
-func TestClient_HeartbeatSendsUpdateStatusFields(t *testing.T) {
+func TestClient_HeartbeatSendsBasicFields(t *testing.T) {
 	t.Parallel()
 
 	var gotPayload HeartbeatRequest
@@ -74,30 +66,16 @@ func TestClient_HeartbeatSendsUpdateStatusFields(t *testing.T) {
 
 	client := NewClient(server.URL, 5*time.Second)
 	err := client.Heartbeat(HeartbeatRequest{
-		AgentID:              "agent-1",
-		Status:               "online",
-		UpdateInProgress:     true,
-		LastUpdateRequestID:  "req-1",
-		LastUpdateType:       "binary_update",
-		LastUpdateStatus:     "installing",
-		LastUpdateTarget:     "1.2.4",
-		LastUpdateError:      "",
-		CurrentConfigVersion: "cfg-1",
+		AgentID:        "agent-1",
+		Status:         "online",
+		PushFailCount:  0,
+		NodeExporterUp: true,
 	})
 	if err != nil {
 		t.Fatalf("Heartbeat() error = %v", err)
 	}
 
-	if !gotPayload.UpdateInProgress {
-		t.Fatal("UpdateInProgress = false, want true")
-	}
-	if gotPayload.LastUpdateRequestID != "req-1" {
-		t.Fatalf("LastUpdateRequestID = %q, want %q", gotPayload.LastUpdateRequestID, "req-1")
-	}
-	if gotPayload.LastUpdateStatus != "installing" {
-		t.Fatalf("LastUpdateStatus = %q, want %q", gotPayload.LastUpdateStatus, "installing")
-	}
-	if gotPayload.CurrentConfigVersion != "cfg-1" {
-		t.Fatalf("CurrentConfigVersion = %q, want %q", gotPayload.CurrentConfigVersion, "cfg-1")
+	if !gotPayload.NodeExporterUp {
+		t.Fatal("NodeExporterUp = false, want true")
 	}
 }
