@@ -247,76 +247,19 @@ avg by (instance) (gpu_power_draw_watts{job="node"})
     description: "{{ $labels.instance }} - {{ $labels.vendor }}"
 ```
 
+### Python API
+
+详细 Python 查询示例请查看 [Python API 查询文档](/api/python)。
+
 ---
-
-## 🐍 Python API 调用
-
-使用 `prometheus-api-client` 库查询 Prometheus。
-
-### 安装
-
-```bash
-pip install prometheus-api-client
-```
-
-### 基本查询
-
-```python
-from prometheus_api_client import PrometheusConnect
-
-prom = PrometheusConnect(url="http://localhost:9090", disable_ssl=True)
-
-# 查询 CPU 使用率
-cpu_query = '''
-(1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100
-'''
-data = prom.custom_query(query=cpu_query)
-
-for metric in data:
-    instance = metric["metric"]["instance"]
-    value = float(metric["value"][1])
-    print(f"{instance}: {value:.2f}%")
-```
-
-### 查询结果格式
-
-```python
-[
-    {
-        "metric": {"instance": "192.168.1.100", "job": "node"},
-        "value": [1704067200.0, "23.45"]
-    }
-]
-```
-
-### 查询 GPU 指标
-
-```python
-# GPU 利用率
-gpu_util = prom.custom_query('gpu_utilization_percent{job="node"}')
-
-# GPU 温度
-gpu_temp = prom.custom_query('gpu_temperature_celsius{job="node"}')
-
-# 打印结果
-for m in gpu_util:
-    print(f"GPU {m['metric']['gpu']}: {m['value'][1]}%")
-```
 
 ### 批量查询
 
-```python
-import concurrent.futures
+使用 Prometheus HTTP API 进行批量查询：
 
-queries = {
-    "cpu": '(1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100',
-    "memory": '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100',
-}
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-    futures = {executor.submit(prom.custom_query, q): k for k, q in queries.items()}
-    for future in concurrent.futures.as_completed(futures):
-        name = futures[future]
-        results = future.result()
-        print(f"\n{name}: {len(results)} results")
+```bash
+# 一次查询多个表达式
+curl -X POST http://localhost:9090/api/v1/query \
+  -d 'query=avg(rate(node_cpu_seconds_total[5m]))'
+```
 ```

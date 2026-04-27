@@ -1,0 +1,200 @@
+/**
+ * 自定义文档样式 - 现代化简约风格
+ */
+
+/* ========== 基础优化 ========== */
+:root {
+  --vp-c-brand-1: #3b82f6;
+  --vp-c-brand-2: #2563eb;
+  --vp-c-brand-3: #1d4ed8;
+}
+
+/* 代码块圆角和阴影 */
+.vp-code-group .tabs,
+div[class*='language-'] {
+  border-radius: 12px !important;
+}
+
+div[class*='language-'] {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ========== 表格样式优化 ========== */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+th {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+th, td {
+  border: 1px solid #e2e8f0;
+  padding: 12px 16px;
+  text-align: left;
+}
+
+tr:hover td {
+  background: #f8fafc;
+}
+
+/* 表格内代码样式 */
+td code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ========== 提示框样式 ========== */
+.custom-block {
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  border-left: 4px solid;
+}
+
+.custom-block.tip {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: #3b82f6;
+}
+
+.custom-block.warning {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #f59e0b;
+}
+
+.custom-block.danger {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #ef4444;
+}
+
+/* ========== 标题样式增强 ========== */
+.vp-doc h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #1e293b 0%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 24px;
+}
+
+.vp-doc h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 8px;
+  margin-top: 40px;
+}
+
+.vp-doc h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.vp-doc h2:first-child {
+  margin-top: 0;
+}
+
+/* ========== 分隔线 ========== */
+.vp-doc hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+  margin: 32px 0;
+}
+
+/* ========== 导航增强 ========== */
+.VPNav {
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.8) !important;
+}
+
+.VPNavBar {
+  background: transparent !important;
+}
+
+/* ========== 侧边栏增强 ========== */
+.VPSidebarItem.level-2.is-link > .item .link .text {
+  font-weight: 500;
+}
+
+.VPSidebarItem.level-2.is-link:hover > .item .link .text {
+  color: var(--vp-c-brand-1);
+}
+
+/* ========== 代码块标题 ========== */
+div[class*='language-'] > span.lang {
+  top: 8px;
+  right: 16px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ========== 滚动条样式 ========== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ========== 响应式优化 ========== */
+@media (max-width: 768px) {
+  .vp-doc h1 {
+    font-size: 1.8rem;
+  }
+
+  table {
+    font-size: 0.875rem;
+  }
+
+  th, td {
+    padding: 10px 12px;
+  }
+}
+
+/* ========== 强调文本 ========== */
+.vp-doc strong {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+/* ========== 列表样式增强 ========== */
+.vp-doc li {
+  margin: 8px 0;
+}
+
+.vp-doc ul > li::marker {
+  color: var(--vp-c-brand-1);
+}
+
+.vp-doc ol > li::marker {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}

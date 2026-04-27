@@ -32,7 +32,7 @@ features:
 
   - icon: 🔧
     title: 一键部署
-    details: ，一条命令完成全部安装配置，开箱即用
+    details: 一条命令完成全部安装配置，开箱即用
 
   - icon: 📈
     title: Grafana 集成

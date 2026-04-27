@@ -1,327 +1,221 @@
 ---
-title: 自定义 GPU 指标
-description: Node Push Exporter 自定义 GPU 指标详解
+title: GPU 指标
+description: Node Push Exporter GPU 指标详解
 ---
 
-# 自定义 GPU 指标
+# GPU 指标
 
-Node Push Exporter 通过调用 `nvidia-smi` 和 `rocm-smi` 采集额外的 GPU 指标，这些指标不包含在标准 node_exporter 中。
+Node Push Exporter 通过 `nvidia-smi` 和 `rocm-smi` 采集 GPU 指标。
 
-## 指标采集状态
+## 📊 采集状态
 
-### node_push_exporter_gpu_scrape_timestamp_seconds
-
-GPU 指标采集时间戳。
-
-**类型:** Gauge
-
-**标签:** 无
-
-### node_push_exporter_gpu_scrape_success
-
-GPU 指标采集是否成功。
-
-**类型:** Gauge
-
-**标签:** `vendor`
-
-| 值 | 含义 |
-|----|------|
-| 1 | 采集成功 |
-| 0 | 采集失败 |
-
-### node_push_exporter_gpu_devices_detected
-
-检测到的 GPU 设备数量。
-
-**类型:** Gauge
-
-**标签:** `vendor`
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `node_push_exporter_gpu_scrape_success` | Gauge | 采集是否成功 (1=成功, 0=失败) |
+| `node_push_exporter_gpu_devices_detected` | Gauge | 检测到的 GPU 数量 |
 
 ```promql
-# 检查 GPU 是否被正确识别
+# 检查 GPU 是否正确识别
 node_push_exporter_gpu_devices_detected{job="node"}
 
 # 按厂商统计 GPU 数量
 sum by (vendor) (node_push_exporter_gpu_devices_detected{job="node"})
 ```
 
-## 通用 GPU 指标
+---
 
-以下指标同时适用于 NVIDIA 和 AMD ROCm GPU：
+## 🌡️ 温度指标
 
-### gpu_up
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `gpu_temperature_celsius` | Gauge | GPU 温度 (通用) |
+| `gpu_temperature_edge_celsius` | Gauge | Edge 温度传感器 |
+| `gpu_temperature_junction_celsius` | Gauge | 结温 (Junction) |
+| `gpu_temperature_mem_celsius` | Gauge | 显存温度 |
+| `gpu_temperature_core_celsius` | Gauge | 核心温度 (备选) |
 
-GPU 设备是否在线。
+### 温度告警阈值
 
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
-
-| 值 | 含义 |
-|----|------|
-| 1 | GPU 在线 |
-| 0 | GPU 离线 |
-
-### gpu_info
-
-GPU 设备信息（恒定为 1）。
-
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
-
-用于在查询时获取 GPU 静态信息。
-
-## 温度指标
-
-### gpu_temperature_celsius
-
-GPU 核心温度。
-
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
+| 状态 | 温度 | 建议 |
+|:----:|:----:|------|
+| ✅ 正常 | < 70°C | 无需处理 |
+| ⚠️ 警告 | 70-85°C | 监控频率增加 |
+| 🔥 危险 | 85-95°C | 检查散热 |
+| 💀 临界 | > 95°C | 可能触发降频保护 |
 
 ```promql
 # 获取所有 GPU 温度
 gpu_temperature_celsius{job="node"}
 
-# 按实例统计平均温度
+# 平均温度
 avg by (instance) (gpu_temperature_celsius{job="node"})
+
+# 温度超过 80°C 的 GPU
+gpu_temperature_celsius{job="node"} > 80
 ```
 
-### gpu_temperature_edge_celsius
+---
 
-GPU Edge 温度传感器读数。
+## 📈 GPU 利用率
 
-**类型:** Gauge
-
-**标签:** 同上
-
-### gpu_temperature_junction_celsius
-
-GPU 结温（Junction Temperature）。
-
-**类型:** Gauge
-
-**标签:** 同上
-
-### gpu_temperature_mem_celsius
-
-GPU 显存温度。
-
-**类型:** Gauge
-
-**标签:** 同上
-
-### gpu_temperature_core_celsius
-
-GPU 核心温度（备选传感器）。
-
-**类型:** Gauge
-
-**标签:** 同上
-
-### 温度告警阈值
-
-| 级别 | 阈值 | 建议操作 |
-|------|------|----------|
-| 正常 | < 70°C | 无需处理 |
-| 警告 | 70-85°C | 监控频率增加 |
-| 危险 | > 85°C | 检查散热 |
-| 临界 | > 95°C | 可能触发降频保护 |
-
-## 利用率指标
-
-### gpu_utilization_percent
-
-GPU 计算利用率。
-
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
-
-**范围:** 0-100
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `gpu_utilization_percent` | Gauge | GPU 计算利用率 (%) |
 
 ```promql
 # GPU 利用率
 gpu_utilization_percent{job="node"}
 
-# 利用率超过 90% 的 GPU
+# 利用率超过 90%
 gpu_utilization_percent{job="node"} > 90
 
-# 按实例统计平均利用率
+# 平均利用率
 avg by (instance) (gpu_utilization_percent{job="node"})
 ```
 
-## 显存指标
+---
 
-### gpu_memory_used_percent
+## 🎮 显存指标
 
-GPU 显存使用率。
-
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
-
-**范围:** 0-100
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `gpu_memory_used_percent` | Gauge | 显存使用率 (%) |
+| `gpu_memory_used_bytes` | Gauge | 已使用显存 (bytes) |
+| `gpu_memory_total_bytes` | Gauge | 显存总量 (bytes) |
 
 ```promql
 # 显存使用率
 gpu_memory_used_percent{job="node"}
 
-# 显存使用率超过 80%
+# 已用显存 (GB)
+gpu_memory_used_bytes{job="node"} / 1024^3
+
+# 总显存 (GB)
+gpu_memory_total_bytes{job="node"} / 1024^3
+
+# 使用率超过 80%
 gpu_memory_used_percent{job="node"} > 80
 ```
 
-### gpu_memory_used_bytes
+---
 
-已使用的 GPU 显存（字节）。
+## ⚡ 功耗指标
 
-**类型:** Gauge
-
-**标签:** 同上
-
-```promql
-# 已使用显存 (GB)
-gpu_memory_used_bytes{job="node"} / 1024 / 1024 / 1024
-```
-
-### gpu_memory_total_bytes
-
-GPU 显存总量（字节）。
-
-**类型:** Gauge
-
-**标签:** 同上
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `gpu_power_draw_watts` | Gauge | 当前功耗 (W) |
+| `gpu_power_limit_watts` | Gauge | 功率上限 (W) |
 
 ```promql
-# 总显存 (GB)
-gpu_memory_total_bytes{job="node"} / 1024 / 1024 / 1024
-```
-
-## 功耗指标
-
-### gpu_power_draw_watts
-
-GPU 当前功耗。
-
-**类型:** Gauge
-
-**标签:** `vendor`, `gpu`, `name`, `uuid`, `device_id`
-
-**单位:** 瓦特 (W)
-
-```promql
-# GPU 当前功耗
+# 当前功耗
 gpu_power_draw_watts{job="node"}
 
-# 单实例 GPU 总功耗
+# 单机总功耗
 sum by (instance) (gpu_power_draw_watts{job="node"})
 
-# 单实例平均单卡功耗
+# 单卡平均功耗
 avg by (instance) (gpu_power_draw_watts{job="node"})
 ```
 
-## NVIDIA 特有信息
+---
 
-NVIDIA GPU 会通过 `nvidia-smi` 获取以下额外信息：
+## 🌀 其他指标
 
-| 字段 | 说明 | 示例 |
+| 指标 | 类型 | 说明 |
+|------|:----:|------|
+| `gpu_fan_speed_percent` | Gauge | 风扇转速 (%) |
+| `gpu_clock_sm_hertz` | Gauge | GPU SM 频率 (Hz) |
+| `gpu_clock_mem_hertz` | Gauge | 显存频率 (Hz) |
+
+---
+
+## 🏷️ 标签说明
+
+| 标签 | 说明 | 示例 |
 |------|------|------|
+| `vendor` | GPU 厂商 | `nvidia`, `rocm` |
 | `gpu` | GPU 编号 | `0`, `1` |
-| `name` | GPU 型号名称 | `NVIDIA GeForce RTX 3090` |
-| `uuid` | GPU 唯一标识符 | `GPU-xxxx-xxxx-xxxx-xxxx` |
+| `name` | GPU 型号 | `NVIDIA GeForce RTX 3090` |
+| `uuid` | GPU 唯一标识 | `GPU-xxxx-xxxx-xxxx-xxxx` |
+| `device_id` | 设备 ID (AMD) | `card0` |
 
-## AMD ROCm 特有信息
+---
 
-AMD GPU 会通过 `rocm-smi` 获取以下额外信息：
+## 🔍 查询示例
 
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `gpu` | GPU 编号 | `0`, `1` |
-| `device_id` | 设备 ID | `card0`, `card1` |
-| `name` | GPU 型号名称 | ` Vega 10 [Radeon RX Vega 56/64]` |
-
-## 查询示例
-
-### 完整 GPU 状态仪表盘
+### GPU 状态总览
 
 ```promql
-# GPU 基本信息
+# 所有 GPU 基本信息
 gpu_info{job="node"}
 
-# 温度 (着色显示)
+# 温度 + 利用率 + 显存
 gpu_temperature_celsius{job="node"}
-
-# 利用率 (百分比)
 gpu_utilization_percent{job="node"}
-
-# 显存使用率
 gpu_memory_used_percent{job="node"}
-
-# 功耗
 gpu_power_draw_watts{job="node"}
 ```
 
 ### 按实例汇总
 
 ```promql
-# 每台服务器的 GPU 数量
+# GPU 数量
 sum by (instance) (node_push_exporter_gpu_devices_detected{job="node"})
 
-# 每台服务器的平均 GPU 温度
+# 平均温度 / 利用率 / 功耗
 avg by (instance) (gpu_temperature_celsius{job="node"})
-
-# 每台服务器的平均 GPU 利用率
 avg by (instance) (gpu_utilization_percent{job="node"})
-
-# 每台服务器的总 GPU 功耗
 sum by (instance) (gpu_power_draw_watts{job="node"})
 
-# 每台服务器的总显存使用
-sum by (instance) (gpu_memory_used_bytes{job="node"}) / 1024 / 1024 / 1024
+# 总显存使用 (GB)
+sum by (instance) (gpu_memory_used_bytes{job="node"}) / 1024^3
 ```
 
 ### 按厂商分析
 
 ```promql
-# NVIDIA vs AMD GPU 分布
+# 各厂商 GPU 数量
 count by (vendor) (gpu_info{job="node"})
-
-# 各厂商平均温度
-avg by (vendor) (gpu_temperature_celsius{job="node"})
 
 # 各厂商平均利用率
 avg by (vendor) (gpu_utilization_percent{job="node"})
 ```
 
-## 故障排查
+---
 
-### GPU 指标采集失败
+## 🔧 故障排查
 
-检查 `node_push_exporter_gpu_scrape_success`:
+### GPU 采集失败
 
 ```promql
-# 找出采集失败的 GPU
+# 找出采集失败的实例
 node_push_exporter_gpu_scrape_success{job="node"} == 0
 ```
 
 可能原因：
-1. 未安装对应驱动
-2. nvidia-smi 或 rocm-smi 不在 PATH 中
-3. 无 GPU 设备
-4. 权限不足
+- ❌ 未安装 GPU 驱动
+- ❌ `nvidia-smi` 或 `rocm-smi` 不在 PATH
+- ❌ 无 GPU 设备
+- ❌ 权限不足
 
-### GPU 设备数为 0
+### 检测到 0 个 GPU
 
 ```promql
-# 检查是否有设备
+# 检查设备数量
 node_push_exporter_gpu_devices_detected{job="node"} == 0
 ```
 
 可能原因：
-1. 系统没有 GPU
-2. GPU 驱动未加载
-3. 虚拟化环境未穿透 GPU
+- 系统没有 GPU
+- GPU 驱动未加载
+- 虚拟化环境未穿透 GPU
+
+### 手动验证
+
+```bash
+# NVIDIA
+nvidia-smi
+
+# AMD ROCm
+rocm-smi
+```

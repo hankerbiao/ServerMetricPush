@@ -28,7 +28,7 @@ export default defineConfig({
             { text: '概述', link: '/guide/' },
             { text: '安装部署', link: '/guide/install' },
             { text: '快速开始', link: '/guide/quickstart' },
-            { text: '用户手册', link: '/guide/usage' }
+            // { text: '用户手册', link: '/guide/usage' }
           ]
         }
       ],
@@ -39,6 +39,7 @@ export default defineConfig({
             { text: '概述', link: '/api/' },
             { text: '文件管理', link: '/api/files' },
             { text: '节点管理', link: '/api/agents' },
+            { text: 'Python 查询', link: '/api/python' },
             { text: '错误响应', link: '/api/errors' }
           ]
         }
@@ -59,11 +60,6 @@ export default defineConfig({
     socialLinks: [
       { icon: 'github', link: 'https://github.com/hankerbiao/ServerMetricPush' }
     ],
-
-    footer: {
-      message: '基于 MIT 许可证发布',
-      copyright: 'Copyright © 2024-present'
-    },
 
     search: {
       provider: 'local'
