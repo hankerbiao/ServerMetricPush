@@ -7,7 +7,21 @@ RELEASES_DIR="${ROOT_DIR}/releases"
 BUILD_DIR="${RELEASES_DIR}/build"
 APP_NAME="node-push-exporter"
 CONFIG_FILE="${ROOT_DIR}/config.yml"
-UPLOAD_URL="${BINARY_DOWNLOAD_UPLOAD_URL:-http://10.17.154.252:8888/api/upload}"
+
+DEV_MODE=false
+while getopts "d" opt; do
+  case "${opt}" in
+    d) DEV_MODE=true ;;
+    *) echo "Usage: $0 [-d]" >&2; exit 1 ;;
+  esac
+done
+
+if [[ "${DEV_MODE}" == true ]]; then
+  UPLOAD_URL="http://127.0.0.1:8888/api/upload"
+  echo "开发模式: 上传到 ${UPLOAD_URL}"
+else
+  UPLOAD_URL="${BINARY_DOWNLOAD_UPLOAD_URL:-http://10.17.154.252:8888/api/upload}"
+fi
 
 TARGETS=(
   "linux amd64"

@@ -1,69 +1,34 @@
 # node-push-exporter
 
-启动本机 `node_exporter`，抓取 `/metrics`，再把指标推到 Prometheus Pushgateway。
+[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-面向最终用户的安装、卸载和排障说明见 [用户手册](docs/user-manual.md)。
+一个轻量级的 Prometheus 指标推送服务，自动启动 `node_exporter` 并将系统指标推送到 Pushgateway。
 
-## 采集项
+## 特性
 
-本服务采集以下指标：
+- **零依赖运行**: 自动管理 `node_exporter` 子进程，无需额外部署
+- **GPU 监控**: 支持 NVIDIA GPU 和 AMD GPU 指标采集
+- **节点注册**: 可选地向控制面服务注册，实现集中管理
+- **多平台支持**: 支持 Linux AMD64 / ARM64 / ARMv7
 
-### 1. node_exporter 指标
+## 快速开始
 
-通过 HTTP 从 `node_exporter` 获取系统基础指标，包括：
-- **CPU**: 使用率、负载等
-- **内存**: 总量、使用量、可用量
-- **磁盘**: 分区空间、IO 操作
-- **网络**: 网卡流量、连接状态
-- **文件系统**: 挂载点容量
-- **系统**: 运行时间、进程数
-
-### 2. GPU 指标
-
-自动检测并采集 NVIDIA 和 AMD GPU 指标：
-
-| 指标 | 说明 |
-|------|------|
-| `gpu_up` | GPU 设备是否在线 |
-| `gpu_info` | GPU 设备信息 |
-| `gpu_temperature_*` | 温度 (edge/junction/mem/core) |
-| `gpu_utilization_percent` | GPU 利用率 |
-| `gpu_memory_used_percent` | 显存使用率 |
-| `gpu_memory_used_bytes` | 显存使用量 (字节) |
-| `gpu_memory_total_bytes` | 显存总量 (字节) |
-| `gpu_power_draw_watts` | 功耗 (瓦特) |
-
-GPU 采集使用对应厂商工具：
-- **NVIDIA**: `nvidia-smi`
-- **AMD**: `rocm-smi`
-
-详细说明见 [GPU 指标采集说明](docs/gpu-metrics.md)。
-
-## 运行方式
-
-本地调试时，程序默认读取当前目录下的 `./config.yml`。
+### 安装
 
 ```bash
-go build -o node-push-exporter ./src
-./node-push-exporter
+# 一键安装（自动检测平台并安装）
+curl -fsSL https://your-binary-server/download/node-push-exporter-linux-$(uname -m).tar.gz | sudo bash
 ```
 
-也可以显式指定配置文件：
+### 配置
 
-```bash
-go run ./src -config ./config.yml
-```
-
-## 配置文件
-
-配置格式是 `key=value`，默认示例见仓库根目录的 [config.yml](config.yml)。
+编辑 `config.yml`:
 
 ```ini
 # Pushgateway 设置
-pushgateway.url=http://localhost:9091
+pushgateway.url=http://your-prometheus:9091
 pushgateway.job=node
-# 留空时会自动使用本机 IP，Prometheus 可据此区分不同服务器
-pushgateway.instance=
+pushgateway.instance=                    # 自动使用本机 IP
 pushgateway.interval=60
 pushgateway.timeout=10
 
@@ -72,104 +37,126 @@ node_exporter.path=node_exporter
 node_exporter.port=9100
 node_exporter.metrics_url=http://localhost:9100/metrics
 
-# 主服务设置（可选）
-control_plane.url=http://127.0.0.1:8080
+# 控制面设置（可选）
+control_plane.url=http://your-server:8080
 control_plane.heartbeat_interval=30
 ```
 
-必填项缺失时，程序会在启动阶段直接报错退出。
-`pushgateway.instance` 留空时，程序会自动回退为本机 IPv4；如果拿不到 IPv4，则回退为 hostname。
-如果未配置 `control_plane.url`，主动注册功能会自动关闭，不影响原有 Pushgateway 推送。
-
-## 本地调试
-
-当前目录放好这两个文件即可：
-
-- `./node-push-exporter`
-- `./node_exporter`
-
-启动后会先确认 `node_exporter` 的 `/metrics` 已就绪，再开始首次推送。`node_exporter.path=node_exporter` 时，会按下面顺序找可执行文件：
-
-1. 当前目录下的 `./node_exporter`
-2. `PATH` 里的 `node_exporter`
-3. 常见安装路径
-
-## systemd
-
-如果用 systemd 部署，建议显式指定系统配置路径：
+### 运行
 
 ```bash
-sudo mkdir -p /etc/node-push-exporter
-sudo cp ./config.yml /etc/node-push-exporter/config.yaml
-sudo cp systemd/node-push-exporter.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable node-push-exporter
-sudo systemctl start node-push-exporter
+./node-push-exporter
 ```
 
-服务文件默认使用：
+## 采集指标
 
-```bash
---config /etc/node-push-exporter/config.yaml
+### 系统指标 (node_exporter)
+
+| 类别 | 指标 |
+|------|------|
+| CPU | 使用率、负载 |
+| 内存 | 总量、使用量、可用量 |
+| 磁盘 | 分区空间、IO 操作 |
+| 网络 | 网卡流量、连接状态 |
+| 文件系统 | 挂载点容量 |
+
+### GPU 指标
+
+| 指标 | 说明 |
+|------|------|
+| `gpu_up` | GPU 是否在线 |
+| `gpu_utilization_percent` | GPU 利用率 |
+| `gpu_memory_used_percent` | 显存使用率 |
+| `gpu_power_draw_watts` | 功耗 |
+| `gpu_temperature_*` | 温度 |
+
+GPU 采集使用 `nvidia-smi` (NVIDIA) 或 `rocm-smi` (AMD)。
+
+## Prometheus 查询示例
+
+```promql
+# CPU 使用率
+100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+# 内存使用率
+100 - (avg by (instance) (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)
+
+# 磁盘使用率
+100 - (avg by (instance, device) (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100)
+
+# 网络流量
+rate(node_network_receive_bytes_total[5m])
+rate(node_network_transmit_bytes_total[5m])
+
+# GPU 利用率
+gpu_utilization_percent
+
+# GPU 显存使用率
+gpu_memory_used_percent
+
+# GPU 温度
+gpu_temperature_edge
 ```
 
-## 主服务节点状态
+## 节点管理
 
-`binary-download-service` 现在也承担主服务能力，用来接收 `node-push-exporter` 的注册和心跳。节点状态页入口：
+启用控制面后，可在 Web UI 查看节点状态：
 
-```bash
-http://<binary-download-service>/agents
+```
+http://your-server:8080/agents
 ```
 
-页面会展示当前节点在线状态、最近心跳、Pushgateway 推送结果、最近错误，以及对应的 node_exporter 指标地址。
+功能包括：
+- 节点在线/离线状态
+- 最近心跳时间
+- Pushgateway 推送结果
+- 错误信息汇总
 
-## 常用命令
+## 构建
 
 ```bash
-go test ./...
+# 编译所有平台
 ./build.sh
-./node-push-exporter --version
-curl http://localhost:9100/metrics
-sudo journalctl -u node-push-exporter -f
-sudo systemctl status node-push-exporter
+
+# 开发模式（构建但不上传）
+./build.sh -d
 ```
 
-## 发布包
+产物位于 `./releases/` 目录。
 
-执行：
+## 项目结构
 
-```bash
-./build.sh
 ```
-
-会在 `./releases` 目录下生成这几个发布包：
-
-- `node-push-exporter-linux-amd64.tar.gz`
-- `node-push-exporter-linux-arm64.tar.gz`
-- `node-push-exporter-linux-armv7.tar.gz`
-
-每个压缩包都包含：
-
-- `node-push-exporter`
-- `config.yml`
-- `README.md`
-
-其他机器可以按自身架构下载对应的 `.tar.gz`，解压后直接修改 `config.yml` 并运行。
+node-push-exporter/
+├── src/
+│   ├── main.go           # 入口点
+│   ├── config/           # 配置加载
+│   ├── process/          # node_exporter 进程管理
+│   ├── exporter/         # 指标采集和推送
+│   ├── pusher/           # Pushgateway 客户端
+│   ├── controlplane/     # 控制面通信
+│   ├── gpu/              # GPU 指标采集
+│   ├── runtime/          # 运行时状态
+│   └── metrics/          # 内部指标
+├── config.yml            # 配置文件示例
+├── build.sh              # 构建脚本
+├── systemd/              # systemd 服务文件
+└── binary-download-service/  # 二进制分发服务
+```
 
 ## 故障排查
 
-`node_exporter` 启动失败时，程序现在会在启动阶段直接报错，不会再误报"进程已启动"。优先检查：
-
-- `./node_exporter` 是否存在并有执行权限
-- `node_exporter.port` 对应端口是否被占用
-- `pushgateway.url` 是否可达
-
-如果是 systemd 环境，先看：
-
 ```bash
-journalctl -u node-push-exporter -n 100
+# 查看运行状态
+sudo systemctl status node-push-exporter
+
+# 查看日志
+sudo journalctl -u node-push-exporter -f
+
+# 验证指标
+curl http://localhost:9100/metrics | head
 ```
 
-## 许可证
+## License
 
 MIT

@@ -15,5 +15,5 @@ node_exporter.port=9100
 node_exporter.metrics_url=http://localhost:9100/metrics
 
 # 主服务设置（可选）
-control_plane.url=http://10.2.48.120:8888
+control_plane.url=http://10.2.48.139:8888
 control_plane.heartbeat_interval=30

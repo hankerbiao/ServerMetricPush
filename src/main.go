@@ -47,13 +47,15 @@ func main() {
 	log.Printf("Pushgateway地址: %s", cfg.Pushgateway.URL)
 	log.Printf("任务名称: %s, 推送间隔: %d秒", cfg.Pushgateway.Job, cfg.Pushgateway.Interval)
 
-	pushInstance := effectivePushInstance(cfg.Pushgateway.Instance)
-	if pushInstance != "" {
-		log.Printf("Pushgateway实例标识: %s", pushInstance)
+	pushInstance, err := effectivePushInstance(cfg.Pushgateway.Instance)
+	if err != nil {
+		log.Fatalf("获取节点IP失败: %v", err)
 	}
+	log.Printf("Pushgateway实例标识: %s", pushInstance)
 
 	// 启动 node_exporter 进程
-	nodeExporter, err := process.Start(process.Config{
+	var nodeExporter *process.Process
+	nodeExporter, err = process.Start(process.Config{
 		ExecutablePath: cfg.NodeExporter.Path,
 		Port:           cfg.NodeExporter.Port,
 	})
@@ -83,7 +85,10 @@ func main() {
 			cfg.ControlPlane.URL,
 			time.Duration(cfg.Pushgateway.Timeout)*time.Second,
 		)
-		registerRequest = buildRegisterRequest(cfg)
+		registerRequest, err = buildRegisterRequest(cfg)
+		if err != nil {
+			log.Fatalf("获取节点信息失败: %v", err)
+		}
 		if err := controlPlaneClient.Register(registerRequest); err != nil {
 			log.Printf("控制面注册失败，后续会继续重试: %v", err)
 		} else {
@@ -147,21 +152,26 @@ func main() {
 	}
 }
 
-func effectivePushInstance(configured string) string {
+func effectivePushInstance(configured string) (string, error) {
 	if configured != "" {
-		return configured
+		return configured, nil
 	}
-	if ip := detectNodeIP(); ip != "" {
-		return ip
+	ip, err := detectNodeIP()
+	if err != nil {
+		return "", err
 	}
-	hostname, _ := os.Hostname()
-	return hostname
+	return ip, nil
 }
 
-func buildRegisterRequest(cfg *config.Config) controlplane.RegisterRequest {
+func buildRegisterRequest(cfg *config.Config) (controlplane.RegisterRequest, error) {
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "unknown-host"
+	}
+
+	ip, err := detectNodeIP()
+	if err != nil {
+		return controlplane.RegisterRequest{}, err
 	}
 
 	return controlplane.RegisterRequest{
@@ -170,13 +180,13 @@ func buildRegisterRequest(cfg *config.Config) controlplane.RegisterRequest {
 		Version:                version,
 		OS:                     runtime.GOOS,
 		Arch:                   runtime.GOARCH,
-		IP:                     detectNodeIP(),
+		IP:                     ip,
 		PushgatewayURL:         cfg.Pushgateway.URL,
 		PushIntervalSeconds:    cfg.Pushgateway.Interval,
 		NodeExporterPort:       cfg.NodeExporter.Port,
 		NodeExporterMetricsURL: cfg.NodeExporter.MetricsURL,
 		StartedAt:              time.Now().UTC(),
-	}
+	}, nil
 }
 
 func buildAgentID(hostname string) string {
@@ -203,34 +213,52 @@ func normalizeMachineID(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func detectNodeIP() string {
+func detectNodeIP() (string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("获取网络接口失败: %v", err)
 	}
 
+	var reasons []string
+
 	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+		if iface.Flags&net.FlagUp == 0 {
+			reasons = append(reasons, fmt.Sprintf("接口 %s (未启用)", iface.Name))
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			reasons = append(reasons, fmt.Sprintf("接口 %s (回环)", iface.Name))
 			continue
 		}
 
 		addrs, err := iface.Addrs()
 		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("接口 %s 地址读取失败: %v", iface.Name, err))
 			continue
 		}
 
 		for _, addr := range addrs {
 			ip := extractIP(addr)
-			if ip == nil || ip.IsLoopback() {
+			if ip == nil {
+				reasons = append(reasons, fmt.Sprintf("接口 %s 地址类型不支持", iface.Name))
+				continue
+			}
+			if ip.IsLoopback() {
+				reasons = append(reasons, fmt.Sprintf("接口 %s 地址 %s (回环)", iface.Name, ip.String()))
 				continue
 			}
 			if ipv4 := ip.To4(); ipv4 != nil {
-				return ipv4.String()
+				return ipv4.String(), nil
+			} else {
+				reasons = append(reasons, fmt.Sprintf("接口 %s 地址 %s (非IPv4)", iface.Name, ip.String()))
 			}
 		}
 	}
 
-	return ""
+	if len(reasons) > 0 {
+		return "", fmt.Errorf("无法获取有效IP地址，原因: %s", strings.Join(reasons, "; "))
+	}
+	return "", fmt.Errorf("未找到任何有效网络接口")
 }
 
 func extractIP(addr net.Addr) net.IP {
