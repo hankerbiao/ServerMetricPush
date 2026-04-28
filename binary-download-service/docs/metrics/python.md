@@ -21,11 +21,11 @@ pip install prometheus-api-client
 from prometheus_api_client import PrometheusConnect
 
 # 连接 Prometheus
-prom = PrometheusConnect(url="http://localhost:9090", disable_ssl=True)
+prom = PrometheusConnect(url="http://10.17.151.170:9090", disable_ssl=True)
 
 # 带认证连接
 prom = PrometheusConnect(
-    url="http://prometheus.example.com:9090",
+    url="http://10.17.151.170:9090",
     headers={"Authorization": "Bearer your-token"}
 )
 ```
@@ -51,7 +51,7 @@ for metric in cpu_data:
 # 返回格式
 [
     {
-        "metric": {"instance": "192.168.1.100", "job": "node"},
+        "metric": {"instance": "10.17.150.235", "job": "node"},
         "value": [1704067200.0, "23.45"]
     }
 ]
@@ -159,7 +159,7 @@ if high_temp:
 ### 按实例过滤
 
 ```python
-target_ip = "192.168.1.100"
+target_ip = "10.17.150.235"
 
 # 查询特定实例
 query = '''
@@ -217,41 +217,62 @@ total_power = prom.custom_query('sum by (instance) (gpu_power_draw_watts{job="no
 ### 完整示例：生成监控报告
 
 ```python
+import json
 from prometheus_api_client import PrometheusConnect
 from datetime import datetime
 
-def generate_report(prom, instance=None):
-    """生成节点监控报告"""
-    filters = f',instance="{instance}"' if instance else ''
+# 配置信息
+PROM_URL = "http://10.17.154.252:9090"
+ALIVE_THRESHOLD = 600
 
+prom = PrometheusConnect(url=PROM_URL, disable_ssl=True)
+
+
+def get_node_metrics_json():
+    """
+    执行 Prometheus 查询并返回格式化的 JSON 数据
+    """
+    # 统一定义查询语句（Key 为 JSON 中的指标名）
     queries = {
-        "CPU": f'avg by (instance) (rate(node_cpu_seconds_total{{mode="idle"{filters}}}[5m])) * 100',
-        "内存": f'(1 - (node_memory_MemAvailable_bytes{filters} / node_memory_MemTotal_bytes{filters})) * 100',
-        "GPU利用率": f'avg by (instance) (gpu_utilization_percent{{job="node"{filters}}})',
-        "GPU温度": f'avg by (instance) (gpu_temperature_celsius{{job="node"{filters}}})',
+        "cpu_usage_percent": f'clamp_max(avg by (instance) (rate(node_cpu_seconds_total{{mode!~"idle|iowait"}}[5m])) * 100, 100) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+        "memory_usage_percent": f'(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+        "network_throughput_mbps": f'sum by (instance) (rate(node_network_receive_bytes_total{{device!~"lo|docker.*|veth.*"}}[5m]) + rate(node_network_transmit_bytes_total{{device!~"lo|docker.*|veth.*"}}[5m])) / 1024 / 1024 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+        "disk_io_mbps": f'sum by (instance) (rate(node_disk_read_bytes_total{{device!~"loop.*|ram.*"}}[5m]) + rate(node_disk_written_bytes_total{{device!~"loop.*|ram.*"}}[5m])) / 1024 / 1024 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})'
     }
 
-    report = {}
-    for name, query in queries.items():
+    # 用于存储最终结果的字典
+    metrics_data = {}
+
+    for metric_name, promql in queries.items():
         try:
-            data = prom.custom_query(query)
-            values = {m["metric"]["instance"]: float(m["value"][1]) for m in data}
-            report[name] = values
+            results = prom.custom_query(query=promql)
+
+            for item in results:
+                instance = item["metric"].get("instance", "unknown")
+                value = round(float(item["value"][1]), 2)  # 保留两位小数
+
+                # 如果该 IP 还没在字典里，先初始化
+                if instance not in metrics_data:
+                    metrics_data[instance] = {
+                        "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+
+                # 将指标存入对应 IP
+                metrics_data[instance][metric_name] = value
+
         except Exception as e:
-            report[name] = {"error": str(e)}
+            print(f"Query error for {metric_name}: {e}")
 
-    return report
+    # 将 Python 字典转换为 JSON 字符串
+    return json.dumps(metrics_data, indent=4, ensure_ascii=False)
 
-# 使用
-prom = PrometheusConnect(url="http://localhost:9090", disable_ssl=True)
-report = generate_report(prom, instance="192.168.1.100")
 
-print("=== 监控报告 ===")
-print(f"生成时间: {datetime.now()}")
-for metric, values in report.items():
-    print(f"\n{metric}:")
-    for node, val in values.items():
-        print(f"  {node}: {val:.1f}")
+if __name__ == "__main__":
+    # 调用函数
+    json_result = get_node_metrics_json()
+
+    # 打印结果
+    print(json_result)
 ```
 
 ---
@@ -262,26 +283,87 @@ for metric, values in report.items():
 from prometheus_api_client import PrometheusConnect
 
 # 初始化
-prom = PrometheusConnect(url="http://localhost:9090", disable_ssl=True)
+prom = PrometheusConnect(url="http://10.17.151.170:9090", disable_ssl=True)
 
-# 查询所有节点状态
-all_nodes = prom.custom_query('count by (instance) (node_cpu_seconds_total{job="node"})')
-print(f"节点数量: {len(all_nodes)}")
+# 最近 10 分钟活跃的节点过滤条件
+ACTIVE_NODES = 'rate(node_cpu_seconds_total{job="node"}[5m]) > 0'
 
-# 查询 GPU 节点
-gpu_nodes = prom.custom_query('count by (instance) (node_push_exporter_gpu_devices_detected{job="node"} > 0)')
-print(f"GPU 节点数量: {len(gpu_nodes)}")
+# 查询最近活跃的节点数量
+active_nodes = prom.custom_query(
+    f'count by (instance) ({ACTIVE_NODES})'
+)
+print(f"最近活跃节点数量: {len(active_nodes)}")
 
-# 性能排行榜
-top_cpu = prom.custom_query('''
-topk(10, (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100)
-''')
+# 查询活跃的 GPU 节点
+active_gpu_nodes = prom.custom_query(
+    f'count by (instance) (node_push_exporter_gpu_devices_detected{{job="node"}} > 0 and {ACTIVE_NODES})'
+)
+print(f"活跃 GPU 节点数量: {len(active_gpu_nodes)}")
 
-top_mem = prom.custom_query('''
-topk(10, (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100)
-''')
+# 过滤并计算 CPU 使用率（避免负数）
+def get_cpu_usage(prom):
+    """获取 CPU 使用率，仅返回有效节点"""
+    query = f'''
+    topk(10,
+      clamp_min(
+        (1 - avg by (instance) (rate(node_cpu_seconds_total{{job="node", mode="idle"}}[5m]))) * 100,
+        0
+      )
+    )
+    '''
+    results = prom.custom_query(query)
+    # 过滤有效结果
+    return [m for m in results if float(m["value"][1]) >= 0]
 
-print(f"CPU 使用率最高的 10 台机器:")
+# 过滤并计算内存使用率（避免负数）
+def get_memory_usage(prom):
+    """获取内存使用率，仅返回有效节点"""
+    query = f'''
+    topk(10,
+      clamp_min(
+        (1 - (node_memory_MemAvailable_bytes{{job="node"}} / node_memory_MemTotal_bytes{{job="node"}})) * 100,
+        0
+      )
+    )
+    '''
+    results = prom.custom_query(query)
+    # 过滤有效结果
+    return [m for m in results if float(m["value"][1]) >= 0]
+
+# 输出 CPU 使用率最高的机器
+top_cpu = get_cpu_usage(prom)
+print("\n=== CPU 使用率最高的 10 台机器 ===")
 for m in top_cpu:
-    print(f"  {m['metric']['instance']}: {float(m['value'][1]):.1f}%")
+    instance = m["metric"]["instance"]
+    cpu = float(m["value"][1])
+    print(f"  {instance}: {cpu:.1f}%")
+
+# 输出内存使用率最高的机器
+top_mem = get_memory_usage(prom)
+print("\n=== 内存使用率最高的 10 台机器 ===")
+for m in top_mem:
+    instance = m["metric"]["instance"]
+    mem = float(m["value"][1])
+    print(f"  {instance}: {mem:.1f}%")
+
+# GPU 活跃节点状态
+print("\n=== GPU 节点状态 ===")
+gpu_query = f'''
+clamp_min(gpu_utilization_percent{{job="node"}}, 0)
+and on(instance) {ACTIVE_NODES}
+'''
+gpu_data = prom.custom_query(gpu_query)
+for m in gpu_data:
+    instance = m["metric"]["instance"]
+    gpu = m["metric"]["gpu"]
+    util = float(m["value"][1])
+    print(f"  {instance} GPU {gpu}: {util:.1f}%")
 ```
+
+### 关键函数说明
+
+| 函数 | 作用 |
+|------|------|
+| `clamp_min(value, 0)` | 将负数结果限制为 0 |
+| `rate(...[5m]) > 0` | 过滤最近活跃的节点 |
+| `and on(instance)` | 按实例关联两个查询 |

@@ -19,10 +19,18 @@ coverage.out
 # Release artifacts
 /releases/
 
+# VitePress build output
+docs/.vitepress/dist/
+
 # Python service runtime files
 binary-download-service/__pycache__/
 binary-download-service/*.db
 binary-download-service/uploads/
+binary-download-service/.venv/
+binary-download-service/.ruff_cache/
+
+# IDE
+.idea/
 
 # macOS
 .DS_Store

@@ -20,7 +20,7 @@ if [[ "${DEV_MODE}" == true ]]; then
   UPLOAD_URL="http://127.0.0.1:8888/api/upload"
   echo "开发模式: 上传到 ${UPLOAD_URL}"
 else
-  UPLOAD_URL="${BINARY_DOWNLOAD_UPLOAD_URL:-http://10.17.154.252:8888/api/upload}"
+  UPLOAD_URL="${BINARY_DOWNLOAD_UPLOAD_URL:-http://10.17.151.170:8888/api/upload}"
 fi
 
 TARGETS=(

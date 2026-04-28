@@ -198,3 +198,48 @@ div[class*='language-'] > span.lang {
   color: var(--vp-c-brand-1);
   font-weight: 600;
 }
+
+/* ========== 服务入口卡片 ========== */
+.home {
+  .service-links {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  .service-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem;
+    background: var(--vp-c-bg-soft);
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.2s;
+  }
+
+  .service-card:hover {
+    border-color: var(--vp-c-brand-1);
+    transform: translateY(-2px);
+  }
+
+  .service-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .service-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--vp-c-text-1);
+  }
+
+  .service-url {
+    font-size: 0.85rem;
+    color: var(--vp-c-text-2);
+    margin-top: 0.25rem;
+  }
+}

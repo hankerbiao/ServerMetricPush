@@ -97,28 +97,7 @@ gpu_memory_total_bytes{job="node"} / 1024^3
 gpu_memory_used_percent{job="node"} > 80
 ```
 
----
-
-## ⚡ 功耗指标
-
-| 指标 | 类型 | 说明 |
-|------|:----:|------|
-| `gpu_power_draw_watts` | Gauge | 当前功耗 (W) |
-| `gpu_power_limit_watts` | Gauge | 功率上限 (W) |
-
-```promql
-# 当前功耗
-gpu_power_draw_watts{job="node"}
-
-# 单机总功耗
-sum by (instance) (gpu_power_draw_watts{job="node"})
-
-# 单卡平均功耗
-avg by (instance) (gpu_power_draw_watts{job="node"})
-```
-
----
-
+    
 ## 🌀 其他指标
 
 | 指标 | 类型 | 说明 |

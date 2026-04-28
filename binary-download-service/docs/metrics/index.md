@@ -54,7 +54,7 @@ gpu_utilization_percent{job="node"}
 | [Prometheus 查询示例](./prometheus) | 常用 PromQL 查询语句 |
 | [Node Exporter 指标](./node-exporter) | 标准系统指标完整列表 |
 | [GPU 指标](./gpu) | GPU 指标详解与采集原理 |
-| [Python API 查询](/api/python) | Python 代码查询 Prometheus |
+| [Python API 查询](./python) | Python 代码查询 Prometheus |
 
 </div>
 

@@ -39,7 +39,6 @@ export default defineConfig({
             { text: '概述', link: '/api/' },
             { text: '文件管理', link: '/api/files' },
             { text: '节点管理', link: '/api/agents' },
-            { text: 'Python 查询', link: '/api/python' },
             { text: '错误响应', link: '/api/errors' }
           ]
         }
@@ -51,7 +50,8 @@ export default defineConfig({
             { text: '概述', link: '/metrics/' },
             { text: 'Prometheus 查询示例', link: '/metrics/prometheus' },
             { text: 'Node Exporter 指标', link: '/metrics/node-exporter' },
-            { text: '自定义指标 (GPU)', link: '/metrics/gpu' }
+            { text: '自定义指标 (GPU)', link: '/metrics/gpu' },
+            { text: 'Python API 查询', link: '/metrics/python' }
           ]
         }
       ]

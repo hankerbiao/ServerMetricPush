@@ -249,17 +249,57 @@ avg by (instance) (gpu_power_draw_watts{job="node"})
 
 ### Python API
 
-详细 Python 查询示例请查看 [Python API 查询文档](/api/python)。
+详细 Python 查询示例请查看 [Python API 查询文档](./python)。
 
 ---
 
-### 批量查询
+## 🐍 Python 批量查询示例
 
-使用 Prometheus HTTP API 进行批量查询：
+使用 Prometheus HTTP API 进行批量查询，过滤离线节点：
 
-```bash
-# 一次查询多个表达式
-curl -X POST http://localhost:9090/api/v1/query \
-  -d 'query=avg(rate(node_cpu_seconds_total[5m]))'
+```python
+import requests
+
+PROMETHEUS_URL = "http://10.17.154.252:9090"
+ALIVE_THRESHOLD = 120  # 节点超时时间（秒）
+
+queries = {
+    "cpu_usage_percent": f'clamp_max(avg by (instance) (rate(node_cpu_seconds_total{{mode!~"idle|iowait"}}[5m])) * 100, 100) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "memory_usage_percent": f'(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "network_throughput_mbps": f'sum by (instance) (rate(node_network_receive_bytes_total{{device!~"lo|docker.*|veth.*"}}[5m]) + rate(node_network_transmit_bytes_total{{device!~"lo|docker.*|veth.*"}}[5m])) / 1024 / 1024 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "disk_io_mbps": f'sum by (instance) (rate(node_disk_read_bytes_total{{device!~"loop.*|ram.*"}}[5m]) + rate(node_disk_written_bytes_total{{device!~"loop.*|ram.*"}}[5m])) / 1024 / 1024 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "gpu_utilization_percent": f'avg by (instance) (gpu_utilization_percent{{job="node"}}) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "gpu_memory_usage_percent": f'avg by (instance) (gpu_memory_used_percent{{job="node"}}) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "gpu_memory_used_gb": f'sum by (instance) (gpu_memory_used_bytes{{job="node"}}) / 1024 / 1024 / 1024 and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "gpu_temperature_celsius": f'avg by (instance) (gpu_temperature_celsius{{job="node"}}) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+    "gpu_power_draw_watts": f'sum by (instance) (gpu_power_draw_watts{{job="node"}}) and on(instance) (time() - push_time_seconds < {ALIVE_THRESHOLD})',
+}
+
+def query_prometheus(query: str) -> list:
+    """执行 Prometheus 查询"""
+    response = requests.post(
+        f"{PROMETHEUS_URL}/api/v1/query",
+        data={"query": query}
+    )
+    return response.json().get("data", {}).get("result", [])
+
+def get_all_metrics() -> dict:
+    """获取所有指标"""
+    results = {}
+    for name, query in queries.items():
+        data = query_prometheus(query)
+        results[name] = {
+            m["metric"]["instance"]: float(m["value"][1])
+            for m in data
+        }
+    return results
+
+# 使用示例
+metrics = get_all_metrics()
+for name, values in metrics.items():
+    print(f"\n{name}:")
+    for instance, value in values.items():
+        print(f"  {instance}: {value:.2f}")
 ```
+
 ```
